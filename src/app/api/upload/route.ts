@@ -31,6 +31,14 @@ export async function POST(req: NextRequest) {
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
 
+  // In production (Vercel), use base64 data URL since filesystem is ephemeral
+  if (process.env.VERCEL) {
+    const base64 = buffer.toString("base64");
+    const dataUrl = `data:${file.type};base64,${base64}`;
+    return NextResponse.json({ url: dataUrl });
+  }
+
+  // In development, save to filesystem
   const ext = file.name.split(".").pop() || "jpg";
   const fileName = `${uuidv4()}.${ext}`;
 
