@@ -49,8 +49,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Find the store
-  const store = await prisma.store.findUnique({ where: { id: storeId } });
+  // Find the store by internal id or Tiendanube storeId
+  let store = await prisma.store.findUnique({ where: { id: storeId } });
+  if (!store) {
+    store = await prisma.store.findUnique({ where: { storeId } });
+  }
   if (!store) {
     return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 });
   }
