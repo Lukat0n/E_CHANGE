@@ -38,7 +38,9 @@ export async function POST(req: NextRequest) {
   const {
     storeId, orderNumber, type, description, photoUrl,
     customerName, customerEmail, customerPhone,
-    shippingAddress, shippingCity, shippingProvince, shippingZipcode, shippingPhone,
+    shippingAddress, shippingNumber, shippingFloor, shippingNeighborhood,
+    shippingCity, shippingProvince, shippingZipcode, shippingPhone,
+    shippingRecipientName, shippingRecipientLastName,
   } = body;
 
   if (!orderNumber || !type) {
@@ -75,10 +77,15 @@ export async function POST(req: NextRequest) {
         customerEmail: customerEmail || null,
         customerPhone: customerPhone || null,
         shippingAddress: shippingAddress || null,
+        shippingNumber: shippingNumber || null,
+        shippingFloor: shippingFloor || null,
+        shippingNeighborhood: shippingNeighborhood || null,
         shippingCity: shippingCity || null,
         shippingProvince: shippingProvince || null,
         shippingZipcode: shippingZipcode || null,
         shippingPhone: shippingPhone || null,
+        shippingRecipientName: shippingRecipientName || null,
+        shippingRecipientLastName: shippingRecipientLastName || null,
       },
     });
     return NextResponse.json(claim, { status: 201 });
@@ -96,10 +103,15 @@ export async function POST(req: NextRequest) {
       customerEmail,
       customerPhone,
       shippingAddress,
+      shippingNumber,
+      shippingFloor,
+      shippingNeighborhood,
       shippingCity,
       shippingProvince,
       shippingZipcode,
       shippingPhone,
+      shippingRecipientName,
+      shippingRecipientLastName,
       createdAt: new Date().toISOString(),
     }, { status: 201 });
   }

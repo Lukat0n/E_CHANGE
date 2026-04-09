@@ -15,10 +15,15 @@ interface Claim {
   customerEmail: string | null;
   customerPhone: string | null;
   shippingAddress: string | null;
+  shippingNumber: string | null;
+  shippingFloor: string | null;
+  shippingNeighborhood: string | null;
   shippingCity: string | null;
   shippingProvince: string | null;
   shippingZipcode: string | null;
   shippingPhone: string | null;
+  shippingRecipientName: string | null;
+  shippingRecipientLastName: string | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }
@@ -62,9 +67,9 @@ export default function AdminDashboard({
     if (res.ok) {
       const updated = await res.json();
       if (updated.shippingError) {
-        alert(`Reclamo aprobado, pero hubo un error creando el envío: ${updated.shippingError}`);
-      } else if (createShipping && updated.shippingResult) {
-        alert("Cambio aprobado y envío creado en Tiendanube");
+        alert(`Cambio aprobado, pero hubo un error creando la orden: ${updated.shippingError}`);
+      } else if (createShipping && updated.draftOrderNumber) {
+        alert(`Cambio aprobado. Se creó la orden #${updated.draftOrderNumber} en Tiendanube. Creá el envío desde el panel de Tiendanube.`);
       }
       setClaims(claims.map((c) => (c.id === id ? { ...c, ...updated } : c)));
       setSelectedClaim(null);
@@ -293,7 +298,16 @@ export default function AdminDashboard({
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-1">Dirección de envío (cambio):</p>
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1 text-sm">
-                      <p className="text-gray-900">{selectedClaim.shippingAddress}</p>
+                      <p className="font-medium text-gray-900">
+                        {selectedClaim.shippingRecipientName}{selectedClaim.shippingRecipientLastName ? ` ${selectedClaim.shippingRecipientLastName}` : ""}
+                      </p>
+                      <p className="text-gray-900">
+                        {selectedClaim.shippingAddress} {selectedClaim.shippingNumber}
+                        {selectedClaim.shippingFloor ? ` - ${selectedClaim.shippingFloor}` : ""}
+                      </p>
+                      {selectedClaim.shippingNeighborhood && (
+                        <p className="text-gray-700">Barrio: {selectedClaim.shippingNeighborhood}</p>
+                      )}
                       <p className="text-gray-700">
                         {selectedClaim.shippingCity}, {selectedClaim.shippingProvince} - CP {selectedClaim.shippingZipcode}
                       </p>

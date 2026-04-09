@@ -16,10 +16,15 @@ interface Claim {
   customerEmail: string | null;
   customerPhone: string | null;
   shippingAddress: string | null;
+  shippingNumber: string | null;
+  shippingFloor: string | null;
+  shippingNeighborhood: string | null;
   shippingCity: string | null;
   shippingProvince: string | null;
   shippingZipcode: string | null;
   shippingPhone: string | null;
+  shippingRecipientName: string | null;
+  shippingRecipientLastName: string | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }

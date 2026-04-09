@@ -91,10 +91,15 @@ export default function HomePage() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
   // Shipping address for cambio
-  const [shipAddress, setShipAddress] = useState("");
-  const [shipCity, setShipCity] = useState("");
-  const [shipProvince, setShipProvince] = useState("");
   const [shipZipcode, setShipZipcode] = useState("");
+  const [shipProvince, setShipProvince] = useState("");
+  const [shipCity, setShipCity] = useState("");
+  const [shipAddress, setShipAddress] = useState(""); // calle
+  const [shipNumber, setShipNumber] = useState("");
+  const [shipFloor, setShipFloor] = useState("");
+  const [shipNeighborhood, setShipNeighborhood] = useState("");
+  const [shipRecipientName, setShipRecipientName] = useState("");
+  const [shipRecipientLastName, setShipRecipientLastName] = useState("");
   const [shipPhone, setShipPhone] = useState("");
 
   useEffect(() => {
@@ -176,10 +181,15 @@ export default function HomePage() {
           customerEmail: orderInfo?.customer?.email || customerEmail,
           customerPhone: orderInfo?.customer?.phone || "",
           ...(claimType === "cambio" && {
-            shippingAddress: shipAddress,
-            shippingCity: shipCity,
-            shippingProvince: shipProvince,
             shippingZipcode: shipZipcode,
+            shippingProvince: shipProvince,
+            shippingCity: shipCity,
+            shippingAddress: shipAddress,
+            shippingNumber: shipNumber,
+            shippingFloor: shipFloor,
+            shippingNeighborhood: shipNeighborhood,
+            shippingRecipientName: shipRecipientName,
+            shippingRecipientLastName: shipRecipientLastName,
             shippingPhone: shipPhone,
           }),
         }),
@@ -229,10 +239,15 @@ export default function HomePage() {
               setClaimType("reclamo");
               setPhoto(null);
               setPhotoPreview(null);
-              setShipAddress("");
-              setShipCity("");
-              setShipProvince("");
               setShipZipcode("");
+              setShipProvince("");
+              setShipCity("");
+              setShipAddress("");
+              setShipNumber("");
+              setShipFloor("");
+              setShipNeighborhood("");
+              setShipRecipientName("");
+              setShipRecipientLastName("");
               setShipPhone("");
             }}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
@@ -539,95 +554,167 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Step 3: Cambio - Address + price + submit */}
+          {/* Step 3: Cambio - CP → Address → Recipient → Price → Submit */}
           {step === 3 && claimType === "cambio" && (
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Cambio de producto</h2>
+            <div className="space-y-5">
+              <h2 className="text-xl font-semibold text-gray-900">Cambio de producto</h2>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center space-y-3">
-                <p className="text-gray-700">El costo del cambio para tu orden #{orderNumber} es:</p>
-                <p className="text-4xl font-bold text-gray-900">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center space-y-2">
+                <p className="text-gray-700 text-sm">Costo del cambio para la orden #{orderNumber}:</p>
+                <p className="text-3xl font-bold text-gray-900">
                   ${CAMBIO_PRECIO.toLocaleString("es-AR")}
-                </p>
-                <p className="text-sm text-gray-500">
-                  Incluye gestión de cambio y envío del nuevo producto
                 </p>
               </div>
 
-              <div className="space-y-3">
-                <h3 className="font-medium text-gray-900">Dirección de envío</h3>
-                <p className="text-sm text-gray-500">Ingresá la dirección donde querés recibir el cambio</p>
+              {/* Destino - Código postal first */}
+              <div className="space-y-3 border border-gray-200 rounded-xl p-4">
+                <h3 className="font-semibold text-gray-900">Destino</h3>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Dirección *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Código postal *</label>
                   <input
                     type="text"
                     required
-                    value={shipAddress}
-                    onChange={(e) => setShipAddress(e.target.value)}
+                    value={shipZipcode}
+                    onChange={(e) => setShipZipcode(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                    placeholder="Calle y número, piso, depto"
+                    placeholder="Ingresá el código postal de destino"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad *</label>
-                    <input
-                      type="text"
-                      required
-                      value={shipCity}
-                      onChange={(e) => setShipCity(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                      placeholder="Ciudad"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Provincia *</label>
-                    <input
-                      type="text"
-                      required
-                      value={shipProvince}
-                      onChange={(e) => setShipProvince(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                      placeholder="Provincia"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Código postal *</label>
-                    <input
-                      type="text"
-                      required
-                      value={shipZipcode}
-                      onChange={(e) => setShipZipcode(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                      placeholder="CP"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono *</label>
-                    <input
-                      type="tel"
-                      required
-                      value={shipPhone}
-                      onChange={(e) => setShipPhone(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                      placeholder="Ej: 1155667788"
-                    />
-                  </div>
-                </div>
+
+                {shipZipcode && (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Provincia *</label>
+                        <select
+                          required
+                          value={shipProvince}
+                          onChange={(e) => setShipProvince(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 bg-white"
+                        >
+                          <option value="">Seleccioná una provincia</option>
+                          {[
+                            "Buenos Aires", "Ciudad Autónoma de Buenos Aires", "Catamarca", "Chaco",
+                            "Chubut", "Córdoba", "Corrientes", "Entre Ríos", "Formosa", "Jujuy",
+                            "La Pampa", "La Rioja", "Mendoza", "Misiones", "Neuquén", "Río Negro",
+                            "Salta", "San Juan", "San Luis", "Santa Cruz", "Santa Fe",
+                            "Santiago del Estero", "Tierra del Fuego", "Tucumán",
+                          ].map((p) => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad *</label>
+                        <input
+                          type="text"
+                          required
+                          value={shipCity}
+                          onChange={(e) => setShipCity(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                          placeholder="Ciudad"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Calle *</label>
+                      <input
+                        type="text"
+                        required
+                        value={shipAddress}
+                        onChange={(e) => setShipAddress(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                        placeholder="Ingresá la calle"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Número *</label>
+                        <input
+                          type="text"
+                          required
+                          value={shipNumber}
+                          onChange={(e) => setShipNumber(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                          placeholder="Número"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Departamento <span className="text-gray-400">(opcional)</span></label>
+                        <input
+                          type="text"
+                          value={shipFloor}
+                          onChange={(e) => setShipFloor(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                          placeholder="Piso / Depto"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Barrio</label>
+                      <input
+                        type="text"
+                        value={shipNeighborhood}
+                        onChange={(e) => setShipNeighborhood(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                        placeholder="Barrio"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
-              <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-                <h3 className="font-medium text-gray-900">Resumen</h3>
-                <div className="text-sm text-gray-600 space-y-1">
-                  <p><span className="font-medium">Orden:</span> #{orderNumber}</p>
-                  <p><span className="font-medium">Nombre:</span> {orderInfo?.customer?.name || "-"}</p>
-                  {orderInfo?.products.map((p, i) => (
-                    <p key={i}><span className="font-medium">Producto:</span> {p.name}</p>
-                  ))}
+              {/* Datos del destinatario */}
+              {shipZipcode && (
+                <div className="space-y-3 border border-gray-200 rounded-xl p-4">
+                  <h3 className="font-semibold text-gray-900">Datos del destinatario</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
+                      <input
+                        type="text"
+                        required
+                        value={shipRecipientName}
+                        onChange={(e) => setShipRecipientName(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                        placeholder="Nombre"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Apellido <span className="text-gray-400">(opcional)</span></label>
+                      <input
+                        type="text"
+                        value={shipRecipientLastName}
+                        onChange={(e) => setShipRecipientLastName(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                        placeholder="Apellido"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-gray-400">(opcional)</span></label>
+                      <input
+                        type="email"
+                        value={customerEmail}
+                        disabled
+                        className="w-full border border-gray-200 rounded-lg px-4 py-2.5 bg-gray-50 text-gray-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono *</label>
+                      <input
+                        type="tel"
+                        required
+                        value={shipPhone}
+                        onChange={(e) => setShipPhone(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                        placeholder="Ej: 1155667788"
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex gap-3">
                 <button type="button" onClick={() => setStep(2)} className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-50 transition">
@@ -635,7 +722,7 @@ export default function HomePage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading || !shipAddress || !shipCity || !shipProvince || !shipZipcode || !shipPhone}
+                  disabled={loading || !shipZipcode || !shipProvince || !shipCity || !shipAddress || !shipNumber || !shipRecipientName || !shipPhone}
                   className="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {loading ? "Enviando..." : "Solicitar cambio"}
