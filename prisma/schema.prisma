@@ -29,6 +29,12 @@ model Claim {
   customerName  String?
   customerEmail String?
   customerPhone String?
+  // Shipping address for cambio claims
+  shippingAddress  String?
+  shippingCity     String?
+  shippingProvince String?
+  shippingZipcode  String?
+  shippingPhone    String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

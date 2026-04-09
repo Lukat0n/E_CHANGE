@@ -14,6 +14,11 @@ interface Claim {
   customerName: string | null;
   customerEmail: string | null;
   customerPhone: string | null;
+  shippingAddress: string | null;
+  shippingCity: string | null;
+  shippingProvince: string | null;
+  shippingZipcode: string | null;
+  shippingPhone: string | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }
@@ -46,16 +51,21 @@ export default function AdminDashboard({
     return true;
   });
 
-  async function updateClaim(id: string, status: string) {
+  async function updateClaim(id: string, status: string, createShipping = false) {
     setUpdating(true);
     const res = await fetch(`/api/claims/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, adminNotes }),
+      body: JSON.stringify({ status, adminNotes, createShipping }),
     });
 
     if (res.ok) {
       const updated = await res.json();
+      if (updated.shippingError) {
+        alert(`Reclamo aprobado, pero hubo un error creando el envío: ${updated.shippingError}`);
+      } else if (createShipping && updated.shippingResult) {
+        alert("Cambio aprobado y envío creado en Tiendanube");
+      }
       setClaims(claims.map((c) => (c.id === id ? { ...c, ...updated } : c)));
       setSelectedClaim(null);
       setAdminNotes("");
@@ -279,6 +289,21 @@ export default function AdminDashboard({
                   </p>
                 </div>
 
+                {selectedClaim.type === "cambio" && selectedClaim.shippingAddress && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-1">Dirección de envío (cambio):</p>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1 text-sm">
+                      <p className="text-gray-900">{selectedClaim.shippingAddress}</p>
+                      <p className="text-gray-700">
+                        {selectedClaim.shippingCity}, {selectedClaim.shippingProvince} - CP {selectedClaim.shippingZipcode}
+                      </p>
+                      {selectedClaim.shippingPhone && (
+                        <p className="text-gray-700">Tel: {selectedClaim.shippingPhone}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {selectedClaim.photoUrl && (
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-1">Foto adjunta:</p>
@@ -304,30 +329,44 @@ export default function AdminDashboard({
                   />
                 </div>
 
-                <div className="flex gap-2 pt-2">
-                  <button
-                    onClick={() => updateClaim(selectedClaim.id, "aprobado")}
-                    disabled={updating}
-                    className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50"
-                  >
-                    Aprobar
-                  </button>
-                  <button
-                    onClick={() => updateClaim(selectedClaim.id, "rechazado")}
-                    disabled={updating}
-                    className="flex-1 bg-red-600 text-white py-2.5 rounded-lg font-medium hover:bg-red-700 transition disabled:opacity-50"
-                  >
-                    Rechazar
-                  </button>
-                  <button
-                    onClick={() => deleteClaim(selectedClaim.id)}
-                    className="px-4 py-2.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition"
-                    title="Eliminar"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
+                <div className="flex flex-col gap-2 pt-2">
+                  {selectedClaim.type === "cambio" && selectedClaim.shippingAddress && selectedClaim.status === "pendiente" && (
+                    <button
+                      onClick={() => updateClaim(selectedClaim.id, "aprobado", true)}
+                      disabled={updating}
+                      className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                      </svg>
+                      {updating ? "Procesando..." : "Aprobar y crear envío"}
+                    </button>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => updateClaim(selectedClaim.id, "aprobado")}
+                      disabled={updating}
+                      className="flex-1 bg-green-600 text-white py-2.5 rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50"
+                    >
+                      Aprobar
+                    </button>
+                    <button
+                      onClick={() => updateClaim(selectedClaim.id, "rechazado")}
+                      disabled={updating}
+                      className="flex-1 bg-red-600 text-white py-2.5 rounded-lg font-medium hover:bg-red-700 transition disabled:opacity-50"
+                    >
+                      Rechazar
+                    </button>
+                    <button
+                      onClick={() => deleteClaim(selectedClaim.id)}
+                      className="px-4 py-2.5 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition"
+                      title="Eliminar"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

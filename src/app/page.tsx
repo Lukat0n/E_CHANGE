@@ -90,6 +90,12 @@ export default function HomePage() {
   const [verifying, setVerifying] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  // Shipping address for cambio
+  const [shipAddress, setShipAddress] = useState("");
+  const [shipCity, setShipCity] = useState("");
+  const [shipProvince, setShipProvince] = useState("");
+  const [shipZipcode, setShipZipcode] = useState("");
+  const [shipPhone, setShipPhone] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -169,6 +175,13 @@ export default function HomePage() {
           customerName: orderInfo?.customer?.name || "",
           customerEmail: orderInfo?.customer?.email || customerEmail,
           customerPhone: orderInfo?.customer?.phone || "",
+          ...(claimType === "cambio" && {
+            shippingAddress: shipAddress,
+            shippingCity: shipCity,
+            shippingProvince: shipProvince,
+            shippingZipcode: shipZipcode,
+            shippingPhone: shipPhone,
+          }),
         }),
       });
 
@@ -216,6 +229,11 @@ export default function HomePage() {
               setClaimType("reclamo");
               setPhoto(null);
               setPhotoPreview(null);
+              setShipAddress("");
+              setShipCity("");
+              setShipProvince("");
+              setShipZipcode("");
+              setShipPhone("");
             }}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
           >
@@ -242,7 +260,7 @@ export default function HomePage() {
             <div key={s} className="flex-1">
               <div className={`h-2 rounded-full transition-colors ${s <= step ? "bg-blue-600" : "bg-gray-200"}`} />
               <p className={`text-xs mt-1 ${s <= step ? "text-blue-600 font-medium" : "text-gray-400"}`}>
-                {s === 1 ? "Verificar" : s === 2 ? "Tipo" : claimType === "cambio" ? "Pagar" : "Foto"}
+                {s === 1 ? "Verificar" : s === 2 ? "Tipo" : claimType === "cambio" ? "Dirección" : "Foto"}
               </p>
             </div>
           ))}
@@ -521,7 +539,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Step 3: Cambio - Payment page */}
+          {/* Step 3: Cambio - Address + price + submit */}
           {step === 3 && claimType === "cambio" && (
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Cambio de producto</h2>
@@ -536,8 +554,72 @@ export default function HomePage() {
                 </p>
               </div>
 
+              <div className="space-y-3">
+                <h3 className="font-medium text-gray-900">Dirección de envío</h3>
+                <p className="text-sm text-gray-500">Ingresá la dirección donde querés recibir el cambio</p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Dirección *</label>
+                  <input
+                    type="text"
+                    required
+                    value={shipAddress}
+                    onChange={(e) => setShipAddress(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                    placeholder="Calle y número, piso, depto"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad *</label>
+                    <input
+                      type="text"
+                      required
+                      value={shipCity}
+                      onChange={(e) => setShipCity(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                      placeholder="Ciudad"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Provincia *</label>
+                    <input
+                      type="text"
+                      required
+                      value={shipProvince}
+                      onChange={(e) => setShipProvince(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                      placeholder="Provincia"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Código postal *</label>
+                    <input
+                      type="text"
+                      required
+                      value={shipZipcode}
+                      onChange={(e) => setShipZipcode(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                      placeholder="CP"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={shipPhone}
+                      onChange={(e) => setShipPhone(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                      placeholder="Ej: 1155667788"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="bg-gray-50 rounded-xl p-4 space-y-2">
-                <h3 className="font-medium text-gray-900">Detalle</h3>
+                <h3 className="font-medium text-gray-900">Resumen</h3>
                 <div className="text-sm text-gray-600 space-y-1">
                   <p><span className="font-medium">Orden:</span> #{orderNumber}</p>
                   <p><span className="font-medium">Nombre:</span> {orderInfo?.customer?.name || "-"}</p>
@@ -552,17 +634,11 @@ export default function HomePage() {
                   Atrás
                 </button>
                 <button
-                  type="button"
-                  onClick={() => {
-                    // TODO: integrate MercadoPago
-                    alert("Próximamente: integración con MercadoPago");
-                  }}
-                  className="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition flex items-center justify-center gap-2"
+                  type="submit"
+                  disabled={loading || !shipAddress || !shipCity || !shipProvince || !shipZipcode || !shipPhone}
+                  className="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                  Pagar ${CAMBIO_PRECIO.toLocaleString("es-AR")}
+                  {loading ? "Enviando..." : "Solicitar cambio"}
                 </button>
               </div>
             </div>

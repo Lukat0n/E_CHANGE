@@ -35,7 +35,11 @@ export async function GET(req: NextRequest) {
 // POST: Create a new claim (public - from customer form)
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { storeId, orderNumber, type, description, photoUrl, customerName, customerEmail, customerPhone } = body;
+  const {
+    storeId, orderNumber, type, description, photoUrl,
+    customerName, customerEmail, customerPhone,
+    shippingAddress, shippingCity, shippingProvince, shippingZipcode, shippingPhone,
+  } = body;
 
   if (!orderNumber || !type) {
     return NextResponse.json(
@@ -70,6 +74,11 @@ export async function POST(req: NextRequest) {
         customerName: customerName || null,
         customerEmail: customerEmail || null,
         customerPhone: customerPhone || null,
+        shippingAddress: shippingAddress || null,
+        shippingCity: shippingCity || null,
+        shippingProvince: shippingProvince || null,
+        shippingZipcode: shippingZipcode || null,
+        shippingPhone: shippingPhone || null,
       },
     });
     return NextResponse.json(claim, { status: 201 });
@@ -86,6 +95,11 @@ export async function POST(req: NextRequest) {
       customerName,
       customerEmail,
       customerPhone,
+      shippingAddress,
+      shippingCity,
+      shippingProvince,
+      shippingZipcode,
+      shippingPhone,
       createdAt: new Date().toISOString(),
     }, { status: 201 });
   }

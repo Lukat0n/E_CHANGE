@@ -36,6 +36,33 @@ export async function getStoreInfo(accessToken: string, storeId: string) {
   return res.json();
 }
 
+export async function fulfillOrder(
+  accessToken: string,
+  storeId: string,
+  orderId: string | number
+) {
+  // Mark the order as fulfilled/shipped in Tiendanube
+  const res = await fetch(
+    `${TIENDANUBE_API}/${storeId}/orders/${orderId}/fulfill`,
+    {
+      method: "POST",
+      headers: headers(accessToken),
+      body: JSON.stringify({
+        shipping_tracking_number: null,
+        shipping_tracking_url: null,
+        notify_customer: true,
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Error creando envío: ${res.status} - ${errText}`);
+  }
+
+  return res.json();
+}
+
 export function formatOrderInfo(order: Record<string, unknown>, storeDomain?: string) {
   const shipping = order.shipping_address as Record<string, unknown> | null;
   const shippingStatus = order.shipping_status as string;
