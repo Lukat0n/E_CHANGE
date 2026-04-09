@@ -36,87 +36,6 @@ export async function getStoreInfo(accessToken: string, storeId: string) {
   return res.json();
 }
 
-// Create a Draft Order in Tiendanube for a cambio (exchange)
-export async function createDraftOrder(
-  accessToken: string,
-  storeId: string,
-  params: {
-    products: Array<{ variant_id: number; quantity: number }>;
-    contactName: string;
-    contactLastName: string;
-    contactEmail: string;
-    contactPhone: string;
-    shippingAddress: string;
-    shippingNumber: string;
-    shippingFloor: string;
-    shippingCity: string;
-    shippingProvince: string;
-    shippingZipcode: string;
-    shippingNeighborhood: string;
-    shippingCost: number;
-  }
-) {
-  const body = {
-    contact_name: params.contactName,
-    contact_lastname: params.contactLastName,
-    contact_email: params.contactEmail,
-    contact_phone: params.contactPhone,
-    payment_status: "paid",
-    products: params.products.map((p) => ({
-      variant_id: p.variant_id,
-      quantity: p.quantity,
-    })),
-    shipping: {
-      cost: params.shippingCost || 0,
-      shipping_address: {
-        address: params.shippingAddress,
-        number: params.shippingNumber,
-        floor: params.shippingFloor || "",
-        locality: params.shippingNeighborhood || "",
-        city: params.shippingCity,
-        province: params.shippingProvince,
-        zipcode: params.shippingZipcode,
-      },
-    },
-    note: "Cambio generado desde E-Change",
-  };
-
-  const res = await fetch(`${TIENDANUBE_API}/${storeId}/draft_orders`, {
-    method: "POST",
-    headers: headers(accessToken),
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Error creando draft order: ${res.status} - ${errText}`);
-  }
-
-  return res.json();
-}
-
-// Confirm a Draft Order → converts it to a real order
-export async function confirmDraftOrder(
-  accessToken: string,
-  storeId: string,
-  draftOrderId: number | string
-) {
-  const res = await fetch(
-    `${TIENDANUBE_API}/${storeId}/draft_orders/${draftOrderId}/confirm`,
-    {
-      method: "POST",
-      headers: headers(accessToken),
-    }
-  );
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Error confirmando draft order: ${res.status} - ${errText}`);
-  }
-
-  return res.json();
-}
-
 export function formatOrderInfo(order: Record<string, unknown>, storeDomain?: string) {
   const shipping = order.shipping_address as Record<string, unknown> | null;
   const shippingStatus = order.shipping_status as string;
@@ -178,15 +97,13 @@ export function formatOrderInfo(order: Record<string, unknown>, storeDomain?: st
       email: contactEmail || "",
       phone: contactPhone || "",
     },
-    // Products (include variant_id and weight for draft order creation)
+    // Products
     products: products
       ? products.map((p) => ({
           name: (p.name as Record<string, string>)?.es || (p.name as Record<string, string>)?.pt || String(p.name),
           quantity: p.quantity as number,
           price: p.price as string,
           sku: p.sku as string,
-          variant_id: p.variant_id as number,
-          weight: p.weight as string | null,
         }))
       : [],
   };
