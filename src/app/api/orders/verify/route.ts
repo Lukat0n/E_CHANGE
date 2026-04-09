@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findStore } from "@/lib/store";
-import { getOrderByNumber, formatOrderInfo } from "@/lib/tiendanube";
+import { getOrderByNumber, getStoreInfo, formatOrderInfo } from "@/lib/tiendanube";
 
 export async function POST(req: NextRequest) {
   const { storeId, orderNumber, customerEmail } = await req.json();
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Validate customer email matches (Tiendanube uses contact_email at order level)
+  // Validate customer email matches
   const orderEmail = ((order.contact_email as string) || "").toLowerCase().trim();
   const inputEmail = customerEmail.toLowerCase().trim();
 
@@ -41,6 +41,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const info = formatOrderInfo(order);
+  // Get store domain for tracking URL
+  let storeDomain: string | undefined;
+  const storeInfo = await getStoreInfo(store.accessToken, store.storeId);
+  if (storeInfo?.url_with_protocol) {
+    storeDomain = storeInfo.url_with_protocol;
+  }
+
+  const info = formatOrderInfo(order, storeDomain);
   return NextResponse.json({ order: info });
 }

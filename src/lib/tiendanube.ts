@@ -36,7 +36,7 @@ export async function getStoreInfo(accessToken: string, storeId: string) {
   return res.json();
 }
 
-export function formatOrderInfo(order: Record<string, unknown>) {
+export function formatOrderInfo(order: Record<string, unknown>, storeDomain?: string) {
   const shipping = order.shipping_address as Record<string, unknown> | null;
   const shippingStatus = order.shipping_status as string;
   const shippingTracking = order.shipping_tracking_number as string | null;
@@ -63,11 +63,11 @@ export function formatOrderInfo(order: Record<string, unknown>) {
     maxDeliveryDate = maxDate.toISOString();
   }
 
-  // Tracking page URL (Tiendanube checkout tracking)
-  const storeId = order.store_id as number;
+  // Tracking page URL - built from store domain + order id + token
+  const orderId = order.id as number;
   const token = order.token as string | null;
-  const trackingPageUrl = token
-    ? `https://www.tiendanube.com/checkout/${storeId}/order/${token}`
+  const trackingPageUrl = (storeDomain && token)
+    ? `${storeDomain}/checkout/v3/success/${orderId}/${token}`
     : shippingTrackingUrl;
 
   return {
