@@ -59,12 +59,11 @@ export default function HomePage() {
   const [step, setStep] = useState(1);
   const [storeId, setStoreId] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
+  const [customerName, setCustomerName] = useState("");
   const [orderInfo, setOrderInfo] = useState<OrderInfo | null>(null);
+  const [verified, setVerified] = useState(false);
   const [claimType, setClaimType] = useState<ClaimType>("reclamo");
   const [description, setDescription] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -79,38 +78,31 @@ export default function HomePage() {
   }, []);
 
   async function verifyOrder() {
-    if (!orderNumber.trim()) return;
+    if (!orderNumber.trim() || !customerName.trim()) return;
     setVerifying(true);
     setError("");
     setOrderInfo(null);
+    setVerified(false);
 
     try {
       const res = await fetch("/api/orders/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId, orderNumber: orderNumber.trim() }),
+        body: JSON.stringify({
+          storeId: storeId || "default",
+          orderNumber: orderNumber.trim(),
+          customerName: customerName.trim(),
+        }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error || "No se pudo verificar la orden");
       }
 
-      const data = await res.json();
       setOrderInfo(data.order);
-
-      // Auto-fill customer data from order
-      if (data.order.customer) {
-        if (data.order.customer.name && !customerName) {
-          setCustomerName(data.order.customer.name);
-        }
-        if (data.order.customer.email && !customerEmail) {
-          setCustomerEmail(data.order.customer.email);
-        }
-        if (data.order.customer.phone && !customerPhone) {
-          setCustomerPhone(data.order.customer.phone);
-        }
-      }
+      setVerified(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error verificando orden");
     } finally {
@@ -157,14 +149,14 @@ export default function HomePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          storeId,
+          storeId: storeId || "default",
           orderNumber,
           type: claimType,
           description,
           photoUrl,
-          customerName,
-          customerEmail,
-          customerPhone,
+          customerName: orderInfo?.customer?.name || customerName,
+          customerEmail: orderInfo?.customer?.email || "",
+          customerPhone: orderInfo?.customer?.phone || "",
         }),
       });
 
@@ -199,11 +191,10 @@ export default function HomePage() {
               setSuccess(false);
               setStep(1);
               setOrderNumber("");
-              setOrderInfo(null);
-              setDescription("");
               setCustomerName("");
-              setCustomerEmail("");
-              setCustomerPhone("");
+              setOrderInfo(null);
+              setVerified(false);
+              setDescription("");
               setPhoto(null);
               setPhotoPreview(null);
             }}
@@ -237,7 +228,7 @@ export default function HomePage() {
                 }`}
               />
               <p className={`text-xs mt-1 ${s <= step ? "text-blue-600 font-medium" : "text-gray-400"}`}>
-                {s === 1 ? "Orden" : s === 2 ? "Detalle" : "Foto"}
+                {s === 1 ? "Verificar" : s === 2 ? "Detalle" : "Foto"}
               </p>
             </div>
           ))}
@@ -253,182 +244,126 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Step 1: Order verification */}
+          {/* Step 1: Order + name verification */}
           {step === 1 && (
             <div className="space-y-4">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Verificar tu orden</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Verificá tu compra</h2>
 
-              {/* Order number input */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Número de orden / compra *
+                  Número de orden *
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    required
-                    value={orderNumber}
-                    onChange={(e) => {
-                      setOrderNumber(e.target.value);
-                      setOrderInfo(null);
-                      setError("");
-                    }}
-                    className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                    placeholder="Ej: 12345"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        verifyOrder();
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={verifyOrder}
-                    disabled={verifying || !orderNumber.trim()}
-                    className="bg-blue-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                  >
-                    {verifying ? "Buscando..." : "Verificar"}
-                  </button>
-                </div>
+                <input
+                  type="text"
+                  required
+                  value={orderNumber}
+                  onChange={(e) => {
+                    setOrderNumber(e.target.value);
+                    setOrderInfo(null);
+                    setVerified(false);
+                    setError("");
+                  }}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                  placeholder="Ej: 12345"
+                />
               </div>
 
-              {/* Order info card */}
-              {orderInfo && (
-                <div className="border border-green-200 bg-green-50 rounded-xl p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="font-semibold text-green-800">Orden #{String(orderInfo.number)} encontrada</span>
-                  </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nombre del comprador *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={customerName}
+                  onChange={(e) => {
+                    setCustomerName(e.target.value);
+                    setVerified(false);
+                    setError("");
+                  }}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                  placeholder="Como figura en la compra"
+                />
+              </div>
 
-                  {/* Shipping info */}
-                  <div className="bg-white rounded-lg p-3 space-y-2">
-                    <p className="font-medium text-gray-900 text-sm">Envío</p>
-                    <div className="flex flex-wrap gap-2">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${shippingStatusColor(orderInfo.shippingStatus)}`}>
-                        {shippingStatusLabel(orderInfo.shippingStatus)}
-                      </span>
-                      {orderInfo.shippingCarrier && (
-                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                          {orderInfo.shippingCarrier}
-                        </span>
-                      )}
+              {!verified && (
+                <button
+                  type="button"
+                  onClick={verifyOrder}
+                  disabled={verifying || !orderNumber.trim() || !customerName.trim()}
+                  className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {verifying ? "Verificando..." : "Verificar orden"}
+                </button>
+              )}
+
+              {/* Order info */}
+              {verified && orderInfo && (
+                <>
+                  <div className="border border-green-200 bg-green-50 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="font-semibold text-green-800">Orden #{String(orderInfo.number)} verificada</span>
                     </div>
-                    {orderInfo.shippingTracking && (
-                      <p className="text-sm text-gray-600">
-                        <span className="font-medium">Tracking:</span>{" "}
-                        {orderInfo.shippingTrackingUrl ? (
-                          <a
-                            href={orderInfo.shippingTrackingUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 underline"
-                          >
-                            {orderInfo.shippingTracking}
-                          </a>
-                        ) : (
-                          orderInfo.shippingTracking
-                        )}
-                      </p>
-                    )}
-                    {orderInfo.shippingAddress && (
-                      <p className="text-sm text-gray-500">
-                        {orderInfo.shippingAddress.address}, {orderInfo.shippingAddress.city},{" "}
-                        {orderInfo.shippingAddress.province} ({orderInfo.shippingAddress.zipcode})
-                      </p>
-                    )}
-                  </div>
 
-                  {/* Products */}
-                  {orderInfo.products.length > 0 && (
+                    {/* Shipping info */}
                     <div className="bg-white rounded-lg p-3 space-y-2">
-                      <p className="font-medium text-gray-900 text-sm">Productos</p>
-                      {orderInfo.products.map((p, i) => (
-                        <div key={i} className="flex justify-between text-sm">
-                          <span className="text-gray-700">{p.quantity}x {p.name}</span>
-                          <span className="text-gray-500">${p.price}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Auto-filled customer data */}
-                  {orderInfo.customer && (
-                    <div className="bg-white rounded-lg p-3 space-y-1">
-                      <p className="font-medium text-gray-900 text-sm">Cliente</p>
-                      <p className="text-sm text-gray-600">{orderInfo.customer.name}</p>
-                      <p className="text-sm text-gray-600">{orderInfo.customer.email}</p>
-                      {orderInfo.customer.phone && (
-                        <p className="text-sm text-gray-600">{orderInfo.customer.phone}</p>
+                      <p className="font-medium text-gray-900 text-sm">Estado del envío</p>
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${shippingStatusColor(orderInfo.shippingStatus)}`}>
+                          {shippingStatusLabel(orderInfo.shippingStatus)}
+                        </span>
+                        {orderInfo.shippingCarrier && (
+                          <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                            {orderInfo.shippingCarrier}
+                          </span>
+                        )}
+                      </div>
+                      {orderInfo.shippingTracking && (
+                        <p className="text-sm text-gray-600">
+                          <span className="font-medium">Tracking:</span>{" "}
+                          {orderInfo.shippingTrackingUrl ? (
+                            <a href={orderInfo.shippingTrackingUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
+                              {orderInfo.shippingTracking}
+                            </a>
+                          ) : (
+                            orderInfo.shippingTracking
+                          )}
+                        </p>
+                      )}
+                      {orderInfo.shippingAddress && (
+                        <p className="text-sm text-gray-500">
+                          {orderInfo.shippingAddress.address}, {orderInfo.shippingAddress.city},{" "}
+                          {orderInfo.shippingAddress.province}
+                        </p>
                       )}
                     </div>
-                  )}
-                </div>
-              )}
 
-              {/* Customer data (editable, shown after order verified or if no store connection) */}
-              {(orderInfo || !storeId) && (
-                <div className="space-y-3 pt-2">
-                  <p className="text-sm font-medium text-gray-700">
-                    {orderInfo ? "Confirmar tus datos:" : "Tus datos:"}
-                  </p>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Nombre completo *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                      placeholder="Juan Pérez"
-                    />
+                    {/* Products */}
+                    {orderInfo.products.length > 0 && (
+                      <div className="bg-white rounded-lg p-3 space-y-2">
+                        <p className="font-medium text-gray-900 text-sm">Productos</p>
+                        {orderInfo.products.map((p, i) => (
+                          <div key={i} className="flex justify-between text-sm">
+                            <span className="text-gray-700">{p.quantity}x {p.name}</span>
+                            <span className="text-gray-500">${p.price}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Email *
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={customerEmail}
-                      onChange={(e) => setCustomerEmail(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                      placeholder="juan@email.com"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Teléfono (opcional)
-                    </label>
-                    <input
-                      type="tel"
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                      placeholder="+54 11 1234-5678"
-                    />
-                  </div>
-                </div>
-              )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (customerName && customerEmail && orderNumber && (orderInfo || !storeId)) {
-                    setStep(2);
-                  } else if (!orderInfo && storeId) {
-                    setError("Primero verificá tu número de orden");
-                  }
-                }}
-                disabled={!orderNumber || (!orderInfo && !!storeId)}
-                className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Continuar
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setStep(2)}
+                    className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition"
+                  >
+                    Continuar
+                  </button>
+                </>
+              )}
             </div>
           )}
 
@@ -489,9 +424,7 @@ export default function HomePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (description) setStep(3);
-                  }}
+                  onClick={() => { if (description) setStep(3); }}
                   className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition"
                 >
                   Continuar
@@ -520,11 +453,7 @@ export default function HomePage() {
                   <label htmlFor="photo-input" className="cursor-pointer">
                     {photoPreview ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={photoPreview}
-                        alt="Preview"
-                        className="max-h-48 mx-auto rounded-lg"
-                      />
+                      <img src={photoPreview} alt="Preview" className="max-h-48 mx-auto rounded-lg" />
                     ) : (
                       <div>
                         <svg className="w-12 h-12 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -543,9 +472,8 @@ export default function HomePage() {
                 <h3 className="font-medium text-gray-900">Resumen</h3>
                 <div className="text-sm text-gray-600 space-y-1">
                   <p><span className="font-medium">Orden:</span> #{orderNumber}</p>
+                  <p><span className="font-medium">Nombre:</span> {orderInfo?.customer?.name || customerName}</p>
                   <p><span className="font-medium">Tipo:</span> {claimType === "reclamo" ? "Reclamo" : claimType === "cambio" ? "Cambio" : "No recibido"}</p>
-                  <p><span className="font-medium">Nombre:</span> {customerName}</p>
-                  <p><span className="font-medium">Email:</span> {customerEmail}</p>
                   {orderInfo?.shippingCarrier && (
                     <p><span className="font-medium">Envío:</span> {orderInfo.shippingCarrier} - {shippingStatusLabel(orderInfo.shippingStatus)}</p>
                   )}
