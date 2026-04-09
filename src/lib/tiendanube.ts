@@ -49,8 +49,12 @@ export function formatOrderInfo(order: Record<string, unknown>) {
   const paymentStatus = order.payment_status as string;
   const status = order.status as string;
   const createdAt = order.created_at as string;
-  const customer = order.customer as Record<string, unknown> | null;
   const products = order.products as Array<Record<string, unknown>> | null;
+
+  // Customer data is at the order level in Tiendanube, not nested
+  const contactEmail = order.contact_email as string | null;
+  const contactName = order.contact_name as string | null;
+  const contactPhone = order.contact_phone as string | null;
 
   return {
     number: order.number,
@@ -72,13 +76,11 @@ export function formatOrderInfo(order: Record<string, unknown>) {
         }
       : null,
     // Customer
-    customer: customer
-      ? {
-          name: customer.name,
-          email: customer.email,
-          phone: customer.phone,
-        }
-      : null,
+    customer: {
+      name: contactName || (shipping?.name as string) || "",
+      email: contactEmail || "",
+      phone: contactPhone || "",
+    },
     // Products
     products: products
       ? products.map((p) => ({

@@ -30,8 +30,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Validate customer email matches
-  const orderEmail = ((order.customer?.email as string) || "").toLowerCase().trim();
+  // Validate customer email matches (Tiendanube uses contact_email at order level)
+  const orderEmail = ((order.contact_email as string) || "").toLowerCase().trim();
   const inputEmail = customerEmail.toLowerCase().trim();
 
   if (!orderEmail || orderEmail !== inputEmail) {
