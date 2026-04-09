@@ -2,20 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { findStore } from "@/lib/store";
 import { getOrderByNumber, formatOrderInfo } from "@/lib/tiendanube";
 
-function normalizeStr(s: string) {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-}
-
 export async function POST(req: NextRequest) {
-  const { storeId, orderNumber, customerName } = await req.json();
+  const { storeId, orderNumber, customerEmail } = await req.json();
 
-  if (!orderNumber || !customerName) {
+  if (!orderNumber || !customerEmail) {
     return NextResponse.json(
-      { error: "Ingresá el número de orden y tu nombre" },
+      { error: "Ingresá el número de orden y tu email" },
       { status: 400 }
     );
   }
@@ -38,25 +30,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Validate customer name matches
-  const orderCustomerName = (order.customer?.name as string) || "";
-  const inputName = normalizeStr(customerName);
-  const orderName = normalizeStr(orderCustomerName);
+  // Validate customer email matches
+  const orderEmail = ((order.customer?.email as string) || "").toLowerCase().trim();
+  const inputEmail = customerEmail.toLowerCase().trim();
 
-  if (!orderName || !inputName) {
+  if (!orderEmail || orderEmail !== inputEmail) {
     return NextResponse.json(
-      { error: "No se pudo verificar el nombre del comprador" },
-      { status: 400 }
-    );
-  }
-
-  // Check if the input name is contained in the order name or vice versa
-  const matches =
-    orderName.includes(inputName) || inputName.includes(orderName);
-
-  if (!matches) {
-    return NextResponse.json(
-      { error: "El nombre no coincide con el de la orden" },
+      { error: "El email no coincide con el de la orden" },
       { status: 403 }
     );
   }

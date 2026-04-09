@@ -59,7 +59,7 @@ export default function HomePage() {
   const [step, setStep] = useState(1);
   const [storeId, setStoreId] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
-  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerName] = useState("");
   const [orderInfo, setOrderInfo] = useState<OrderInfo | null>(null);
   const [verified, setVerified] = useState(false);
   const [claimType, setClaimType] = useState<ClaimType>("reclamo");
@@ -78,7 +78,7 @@ export default function HomePage() {
   }, []);
 
   async function verifyOrder() {
-    if (!orderNumber.trim() || !customerName.trim()) return;
+    if (!orderNumber.trim() || !customerEmail.trim()) return;
     setVerifying(true);
     setError("");
     setOrderInfo(null);
@@ -91,7 +91,7 @@ export default function HomePage() {
         body: JSON.stringify({
           storeId: storeId || "default",
           orderNumber: orderNumber.trim(),
-          customerName: customerName.trim(),
+          customerEmail: customerEmail.trim(),
         }),
       });
 
@@ -154,8 +154,8 @@ export default function HomePage() {
           type: claimType,
           description,
           photoUrl,
-          customerName: orderInfo?.customer?.name || customerName,
-          customerEmail: orderInfo?.customer?.email || "",
+          customerName: orderInfo?.customer?.name || "",
+          customerEmail: orderInfo?.customer?.email || customerEmail,
           customerPhone: orderInfo?.customer?.phone || "",
         }),
       });
@@ -270,19 +270,19 @@ export default function HomePage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nombre del comprador *
+                  Email del comprador *
                 </label>
                 <input
-                  type="text"
+                  type="email"
                   required
-                  value={customerName}
+                  value={customerEmail}
                   onChange={(e) => {
                     setCustomerName(e.target.value);
                     setVerified(false);
                     setError("");
                   }}
                   className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                  placeholder="Como figura en la compra"
+                  placeholder="El email que usaste en la compra"
                 />
               </div>
 
@@ -290,7 +290,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   onClick={verifyOrder}
-                  disabled={verifying || !orderNumber.trim() || !customerName.trim()}
+                  disabled={verifying || !orderNumber.trim() || !customerEmail.trim()}
                   className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {verifying ? "Verificando..." : "Verificar orden"}
@@ -472,7 +472,7 @@ export default function HomePage() {
                 <h3 className="font-medium text-gray-900">Resumen</h3>
                 <div className="text-sm text-gray-600 space-y-1">
                   <p><span className="font-medium">Orden:</span> #{orderNumber}</p>
-                  <p><span className="font-medium">Nombre:</span> {orderInfo?.customer?.name || customerName}</p>
+                  <p><span className="font-medium">Nombre:</span> {orderInfo?.customer?.name || "-"}</p>
                   <p><span className="font-medium">Tipo:</span> {claimType === "reclamo" ? "Reclamo" : claimType === "cambio" ? "Cambio" : "No recibido"}</p>
                   {orderInfo?.shippingCarrier && (
                     <p><span className="font-medium">Envío:</span> {orderInfo.shippingCarrier} - {shippingStatusLabel(orderInfo.shippingStatus)}</p>
