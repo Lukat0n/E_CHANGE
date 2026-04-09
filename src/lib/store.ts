@@ -13,12 +13,31 @@ export async function findStore(storeId: string): Promise<StoreData | null> {
 
   if (envStoreId && envAccessToken) {
     if (storeId === envStoreId || storeId === "default" || !storeId) {
-      return {
+      const data: StoreData = {
         id: envStoreId,
         storeId: envStoreId,
         storeName: process.env.TIENDANUBE_STORE_NAME || "Mi Tienda",
         accessToken: envAccessToken,
       };
+
+      // Ensure the Store record exists in DB (needed for FK on claims)
+      try {
+        const { prisma } = await import("@/lib/prisma");
+        await prisma.store.upsert({
+          where: { storeId: envStoreId },
+          create: {
+            id: envStoreId,
+            storeId: envStoreId,
+            storeName: data.storeName,
+            accessToken: envAccessToken,
+          },
+          update: {},
+        });
+      } catch {
+        // DB not available, continue without
+      }
+
+      return data;
     }
   }
 
