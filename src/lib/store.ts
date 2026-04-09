@@ -1,5 +1,3 @@
-import { prisma } from "@/lib/prisma";
-
 interface StoreData {
   id: string;
   storeId: string;
@@ -7,30 +5,33 @@ interface StoreData {
   accessToken: string;
 }
 
-// Resolve store from DB or environment variables
+// Resolve store from env vars first (fast), then DB
 export async function findStore(storeId: string): Promise<StoreData | null> {
-  // Try DB first
+  // Check env vars first (works on Vercel without DB)
+  const envStoreId = process.env.TIENDANUBE_STORE_ID;
+  const envAccessToken = process.env.TIENDANUBE_ACCESS_TOKEN;
+
+  if (envStoreId && envAccessToken) {
+    if (storeId === envStoreId || storeId === "default" || !storeId) {
+      return {
+        id: envStoreId,
+        storeId: envStoreId,
+        storeName: process.env.TIENDANUBE_STORE_NAME || "Mi Tienda",
+        accessToken: envAccessToken,
+      };
+    }
+  }
+
+  // Try DB as fallback (for multi-store setups)
   try {
+    const { prisma } = await import("@/lib/prisma");
     let store = await prisma.store.findUnique({ where: { id: storeId } });
     if (!store) {
       store = await prisma.store.findUnique({ where: { storeId } });
     }
     if (store) return store;
   } catch {
-    // DB not available (e.g. Vercel without DB), fall through to env vars
-  }
-
-  // Fallback: env vars for single store setup
-  const envStoreId = process.env.TIENDANUBE_STORE_ID;
-  const envAccessToken = process.env.TIENDANUBE_ACCESS_TOKEN;
-
-  if (envStoreId && envAccessToken && (storeId === envStoreId || storeId === "default")) {
-    return {
-      id: envStoreId,
-      storeId: envStoreId,
-      storeName: process.env.TIENDANUBE_STORE_NAME || "Mi Tienda",
-      accessToken: envAccessToken,
-    };
+    // DB not available
   }
 
   return null;
