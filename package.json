@@ -10,6 +10,8 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@libsql/client": "^0.8.1",
+    "@prisma/adapter-libsql": "^5.22.0",
     "@prisma/client": "^5.22.0",
     "formidable": "^3.5.4",
     "multer": "^2.1.1",
