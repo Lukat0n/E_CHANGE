@@ -1,27 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { findStore } from "@/lib/store";
 import { getOrderByNumber, formatOrderInfo } from "@/lib/tiendanube";
 
 export async function POST(req: NextRequest) {
   const { storeId, orderNumber } = await req.json();
 
-  if (!storeId || !orderNumber) {
+  if (!orderNumber) {
     return NextResponse.json(
-      { error: "Faltan storeId y orderNumber" },
+      { error: "Falta el número de orden" },
       { status: 400 }
     );
   }
 
-  // Find store
-  let store = await prisma.store.findUnique({ where: { id: storeId } });
-  if (!store) {
-    store = await prisma.store.findUnique({ where: { storeId } });
-  }
+  // Use provided storeId or "default" to get from env vars
+  const store = await findStore(storeId || "default");
   if (!store) {
     return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 });
   }
 
-  // Query Tiendanube API
   const order = await getOrderByNumber(
     store.accessToken,
     store.storeId,
@@ -36,6 +32,5 @@ export async function POST(req: NextRequest) {
   }
 
   const info = formatOrderInfo(order);
-
   return NextResponse.json({ order: info });
 }
