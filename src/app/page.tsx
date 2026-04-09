@@ -14,6 +14,8 @@ interface OrderInfo {
   shippingOption: string | null;
   shippingTracking: string | null;
   shippingTrackingUrl: string | null;
+  trackingPageUrl: string | null;
+  maxDeliveryDate: string | null;
   shippingAddress: {
     address: string;
     city: string;
@@ -32,6 +34,8 @@ interface OrderInfo {
     sku: string;
   }>;
 }
+
+const CAMBIO_PRECIO = 9968;
 
 function shippingStatusLabel(status: string) {
   const map: Record<string, string> = {
@@ -55,11 +59,27 @@ function shippingStatusColor(status: string) {
   }
 }
 
+function formatDate(dateStr: string) {
+  return new Date(dateStr).toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+  });
+}
+
+function isDeliveryExpired(maxDeliveryDate: string | null): boolean {
+  if (!maxDeliveryDate) return true; // If no date, allow
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const max = new Date(maxDeliveryDate);
+  max.setHours(0, 0, 0, 0);
+  return now > max;
+}
+
 export default function HomePage() {
   const [step, setStep] = useState(1);
   const [storeId, setStoreId] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
-  const [customerEmail, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
   const [orderInfo, setOrderInfo] = useState<OrderInfo | null>(null);
   const [verified, setVerified] = useState(false);
   const [claimType, setClaimType] = useState<ClaimType>("reclamo");
@@ -96,10 +116,7 @@ export default function HomePage() {
       });
 
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "No se pudo verificar la orden");
-      }
+      if (!res.ok) throw new Error(data.error || "No se pudo verificar la orden");
 
       setOrderInfo(data.order);
       setVerified(true);
@@ -131,16 +148,11 @@ export default function HomePage() {
       if (photo) {
         const formData = new FormData();
         formData.append("file", photo);
-        const uploadRes = await fetch("/api/upload", {
-          method: "POST",
-          body: formData,
-        });
-
+        const uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
         if (!uploadRes.ok) {
           const data = await uploadRes.json();
           throw new Error(data.error || "Error subiendo la foto");
         }
-
         const uploadData = await uploadRes.json();
         photoUrl = uploadData.url;
       }
@@ -173,6 +185,10 @@ export default function HomePage() {
     }
   }
 
+  // Determine what to show based on claim type
+  const deliveryExpired = orderInfo ? isDeliveryExpired(orderInfo.maxDeliveryDate) : false;
+  const noRecibidoBlocked = claimType === "no_recibido" && !deliveryExpired;
+
   if (success) {
     return (
       <div className="flex-1 flex items-center justify-center p-4">
@@ -182,25 +198,28 @@ export default function HomePage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Reclamo enviado</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            {claimType === "cambio" ? "Solicitud de cambio enviada" : "Reclamo enviado"}
+          </h2>
           <p className="text-gray-600 mb-6">
-            Tu solicitud fue registrada exitosamente. Te contactaremos pronto para resolverlo.
+            Tu solicitud fue registrada exitosamente. Te contactaremos pronto.
           </p>
           <button
             onClick={() => {
               setSuccess(false);
               setStep(1);
               setOrderNumber("");
-              setCustomerName("");
+              setCustomerEmail("");
               setOrderInfo(null);
               setVerified(false);
               setDescription("");
+              setClaimType("reclamo");
               setPhoto(null);
               setPhotoPreview(null);
             }}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
           >
-            Enviar otro reclamo
+            Volver al inicio
           </button>
         </div>
       </div>
@@ -209,7 +228,6 @@ export default function HomePage() {
 
   return (
     <div className="flex-1 flex flex-col">
-      {/* Header */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-3xl mx-auto px-4 py-4">
           <h1 className="text-2xl font-bold text-gray-900">E-Change</h1>
@@ -222,20 +240,15 @@ export default function HomePage() {
         <div className="flex items-center gap-2 mb-6">
           {[1, 2, 3].map((s) => (
             <div key={s} className="flex-1">
-              <div
-                className={`h-2 rounded-full transition-colors ${
-                  s <= step ? "bg-blue-600" : "bg-gray-200"
-                }`}
-              />
+              <div className={`h-2 rounded-full transition-colors ${s <= step ? "bg-blue-600" : "bg-gray-200"}`} />
               <p className={`text-xs mt-1 ${s <= step ? "text-blue-600 font-medium" : "text-gray-400"}`}>
-                {s === 1 ? "Verificar" : s === 2 ? "Detalle" : "Foto"}
+                {s === 1 ? "Verificar" : s === 2 ? "Tipo" : claimType === "cambio" ? "Pagar" : "Foto"}
               </p>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Form */}
       <div className="max-w-3xl mx-auto w-full px-4 pb-8 flex-1">
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-lg p-6 md:p-8">
           {error && (
@@ -244,43 +257,30 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Step 1: Order + name verification */}
+          {/* Step 1: Order + email verification */}
           {step === 1 && (
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Verificá tu compra</h2>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Número de orden *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Número de orden *</label>
                 <input
                   type="text"
                   required
                   value={orderNumber}
-                  onChange={(e) => {
-                    setOrderNumber(e.target.value);
-                    setOrderInfo(null);
-                    setVerified(false);
-                    setError("");
-                  }}
+                  onChange={(e) => { setOrderNumber(e.target.value); setOrderInfo(null); setVerified(false); setError(""); }}
                   className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
                   placeholder="Ej: 12345"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email del comprador *
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email del comprador *</label>
                 <input
                   type="email"
                   required
                   value={customerEmail}
-                  onChange={(e) => {
-                    setCustomerName(e.target.value);
-                    setVerified(false);
-                    setError("");
-                  }}
+                  onChange={(e) => { setCustomerEmail(e.target.value); setVerified(false); setError(""); }}
                   className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
                   placeholder="El email que usaste en la compra"
                 />
@@ -297,7 +297,6 @@ export default function HomePage() {
                 </button>
               )}
 
-              {/* Order info */}
               {verified && orderInfo && (
                 <>
                   <div className="border border-green-200 bg-green-50 rounded-xl p-4 space-y-3">
@@ -308,7 +307,6 @@ export default function HomePage() {
                       <span className="font-semibold text-green-800">Orden #{String(orderInfo.number)} verificada</span>
                     </div>
 
-                    {/* Shipping info */}
                     <div className="bg-white rounded-lg p-3 space-y-2">
                       <p className="font-medium text-gray-900 text-sm">Estado del envío</p>
                       <div className="flex flex-wrap gap-2">
@@ -321,6 +319,12 @@ export default function HomePage() {
                           </span>
                         )}
                       </div>
+                      {orderInfo.maxDeliveryDate && (
+                        <p className="text-sm text-gray-600">
+                          <span className="font-medium">Entrega estimada hasta:</span>{" "}
+                          {formatDate(orderInfo.maxDeliveryDate)}
+                        </p>
+                      )}
                       {orderInfo.shippingTracking && (
                         <p className="text-sm text-gray-600">
                           <span className="font-medium">Tracking:</span>{" "}
@@ -328,20 +332,16 @@ export default function HomePage() {
                             <a href={orderInfo.shippingTrackingUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
                               {orderInfo.shippingTracking}
                             </a>
-                          ) : (
-                            orderInfo.shippingTracking
-                          )}
+                          ) : orderInfo.shippingTracking}
                         </p>
                       )}
                       {orderInfo.shippingAddress && (
                         <p className="text-sm text-gray-500">
-                          {orderInfo.shippingAddress.address}, {orderInfo.shippingAddress.city},{" "}
-                          {orderInfo.shippingAddress.province}
+                          {orderInfo.shippingAddress.address}, {orderInfo.shippingAddress.city}, {orderInfo.shippingAddress.province}
                         </p>
                       )}
                     </div>
 
-                    {/* Products */}
                     {orderInfo.products.length > 0 && (
                       <div className="bg-white rounded-lg p-3 space-y-2">
                         <p className="font-medium text-gray-900 text-sm">Productos</p>
@@ -367,52 +367,81 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Step 2: Claim details */}
+          {/* Step 2: Claim type */}
           {step === 2 && (
             <div className="space-y-4">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Detalle del reclamo</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">¿Qué necesitás?</h2>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Tipo de solicitud *
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {([
-                    { value: "reclamo" as const, label: "Reclamo", desc: "Producto con problema", icon: "!" },
-                    { value: "cambio" as const, label: "Cambio", desc: "Quiero cambiar producto", icon: "↔" },
-                    { value: "no_recibido" as const, label: "No recibido", desc: "No me llegó el pedido", icon: "?" },
-                  ]).map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setClaimType(opt.value)}
-                      className={`p-4 rounded-xl border-2 text-left transition ${
-                        claimType === opt.value
-                          ? "border-blue-600 bg-blue-50"
-                          : "border-gray-200 hover:border-gray-300"
-                      }`}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {([
+                  { value: "reclamo" as const, label: "Reclamo", desc: "Producto con problema", icon: "!" },
+                  { value: "cambio" as const, label: "Cambio", desc: "Quiero cambiar producto", icon: "↔" },
+                  { value: "no_recibido" as const, label: "No recibido", desc: "No me llegó el pedido", icon: "?" },
+                ]).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setClaimType(opt.value)}
+                    className={`p-4 rounded-xl border-2 text-left transition ${
+                      claimType === opt.value
+                        ? "border-blue-600 bg-blue-50"
+                        : "border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <span className="text-2xl">{opt.icon}</span>
+                    <p className="font-medium text-gray-900 mt-1">{opt.label}</p>
+                    <p className="text-xs text-gray-500">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+
+              {/* No recibido blocked message */}
+              {noRecibidoBlocked && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <svg className="w-5 h-5 text-yellow-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                    <div>
+                      <p className="font-medium text-yellow-800">
+                        Tu pedido todavía está dentro del plazo de entrega
+                      </p>
+                      <p className="text-sm text-yellow-700 mt-1">
+                        La fecha límite de entrega es el <strong>{orderInfo?.maxDeliveryDate ? formatDate(orderInfo.maxDeliveryDate) : "-"}</strong>.
+                        Podés hacer este reclamo a partir del día siguiente si no recibiste tu pedido.
+                      </p>
+                    </div>
+                  </div>
+                  {orderInfo?.trackingPageUrl && (
+                    <a
+                      href={orderInfo.trackingPageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 mt-1"
                     >
-                      <span className="text-2xl">{opt.icon}</span>
-                      <p className="font-medium text-gray-900 mt-1">{opt.label}</p>
-                      <p className="text-xs text-gray-500">{opt.desc}</p>
-                    </button>
-                  ))}
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                      Ver seguimiento de mi pedido
+                    </a>
+                  )}
                 </div>
-              </div>
+              )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Descripción *
-                </label>
-                <textarea
-                  required
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={4}
-                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none text-gray-900"
-                  placeholder="Contanos qué pasó con tu pedido..."
-                />
-              </div>
+              {/* Description for reclamo and no_recibido */}
+              {(claimType === "reclamo" || (claimType === "no_recibido" && deliveryExpired)) && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Descripción *</label>
+                  <textarea
+                    required
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={4}
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none text-gray-900"
+                    placeholder={claimType === "no_recibido" ? "Contanos los detalles..." : "Contanos qué pasó con tu pedido..."}
+                  />
+                </div>
+              )}
 
               <div className="flex gap-3">
                 <button
@@ -422,19 +451,30 @@ export default function HomePage() {
                 >
                   Atrás
                 </button>
-                <button
-                  type="button"
-                  onClick={() => { if (description) setStep(3); }}
-                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition"
-                >
-                  Continuar
-                </button>
+                {claimType === "cambio" ? (
+                  <button
+                    type="button"
+                    onClick={() => setStep(3)}
+                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition"
+                  >
+                    Ver precio del cambio
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { if (description && !noRecibidoBlocked) setStep(3); }}
+                    disabled={noRecibidoBlocked || !description}
+                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Continuar
+                  </button>
+                )}
               </div>
             </div>
           )}
 
-          {/* Step 3: Photo + Submit */}
-          {step === 3 && (
+          {/* Step 3: Photo (reclamo/no_recibido) OR Payment (cambio) */}
+          {step === 3 && claimType !== "cambio" && (
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Foto del producto</h2>
 
@@ -443,13 +483,7 @@ export default function HomePage() {
                   Adjuntá una foto (opcional pero recomendado)
                 </label>
                 <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-blue-400 transition cursor-pointer">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoChange}
-                    className="hidden"
-                    id="photo-input"
-                  />
+                  <input type="file" accept="image/*" onChange={handlePhotoChange} className="hidden" id="photo-input" />
                   <label htmlFor="photo-input" className="cursor-pointer">
                     {photoPreview ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -467,33 +501,68 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Summary */}
               <div className="bg-gray-50 rounded-xl p-4 space-y-2">
                 <h3 className="font-medium text-gray-900">Resumen</h3>
                 <div className="text-sm text-gray-600 space-y-1">
                   <p><span className="font-medium">Orden:</span> #{orderNumber}</p>
                   <p><span className="font-medium">Nombre:</span> {orderInfo?.customer?.name || "-"}</p>
-                  <p><span className="font-medium">Tipo:</span> {claimType === "reclamo" ? "Reclamo" : claimType === "cambio" ? "Cambio" : "No recibido"}</p>
-                  {orderInfo?.shippingCarrier && (
-                    <p><span className="font-medium">Envío:</span> {orderInfo.shippingCarrier} - {shippingStatusLabel(orderInfo.shippingStatus)}</p>
-                  )}
+                  <p><span className="font-medium">Tipo:</span> {claimType === "reclamo" ? "Reclamo" : "No recibido"}</p>
                 </div>
               </div>
 
               <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setStep(2)}
-                  className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-50 transition"
-                >
+                <button type="button" onClick={() => setStep(2)} className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-50 transition">
+                  Atrás
+                </button>
+                <button type="submit" disabled={loading} className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  {loading ? "Enviando..." : "Enviar reclamo"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Cambio - Payment page */}
+          {step === 3 && claimType === "cambio" && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">Cambio de producto</h2>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center space-y-3">
+                <p className="text-gray-700">El costo del cambio para tu orden #{orderNumber} es:</p>
+                <p className="text-4xl font-bold text-gray-900">
+                  ${CAMBIO_PRECIO.toLocaleString("es-AR")}
+                </p>
+                <p className="text-sm text-gray-500">
+                  Incluye gestión de cambio y envío del nuevo producto
+                </p>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                <h3 className="font-medium text-gray-900">Detalle</h3>
+                <div className="text-sm text-gray-600 space-y-1">
+                  <p><span className="font-medium">Orden:</span> #{orderNumber}</p>
+                  <p><span className="font-medium">Nombre:</span> {orderInfo?.customer?.name || "-"}</p>
+                  {orderInfo?.products.map((p, i) => (
+                    <p key={i}><span className="font-medium">Producto:</span> {p.name}</p>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setStep(2)} className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-50 transition">
                   Atrás
                 </button>
                 <button
-                  type="submit"
-                  disabled={loading}
-                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button"
+                  onClick={() => {
+                    // TODO: integrate MercadoPago
+                    alert("Próximamente: integración con MercadoPago");
+                  }}
+                  className="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition flex items-center justify-center gap-2"
                 >
-                  {loading ? "Enviando..." : "Enviar reclamo"}
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                  Pagar ${CAMBIO_PRECIO.toLocaleString("es-AR")}
                 </button>
               </div>
             </div>

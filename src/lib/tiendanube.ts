@@ -13,7 +13,6 @@ export async function getOrderByNumber(
   storeId: string,
   orderNumber: string
 ) {
-  // Search by order number
   const res = await fetch(
     `${TIENDANUBE_API}/${storeId}/orders?q=${encodeURIComponent(orderNumber)}`,
     { headers: headers(accessToken) }
@@ -22,7 +21,6 @@ export async function getOrderByNumber(
   if (!res.ok) return null;
   const orders = await res.json();
 
-  // Find exact match by number
   const order = orders.find(
     (o: { number: string | number }) => String(o.number) === String(orderNumber)
   );
@@ -38,7 +36,6 @@ export async function getStoreInfo(accessToken: string, storeId: string) {
   return res.json();
 }
 
-// Extract useful order info for the customer
 export function formatOrderInfo(order: Record<string, unknown>) {
   const shipping = order.shipping_address as Record<string, unknown> | null;
   const shippingStatus = order.shipping_status as string;
@@ -49,12 +46,29 @@ export function formatOrderInfo(order: Record<string, unknown>) {
   const paymentStatus = order.payment_status as string;
   const status = order.status as string;
   const createdAt = order.created_at as string;
+  const shippedAt = order.shipped_at as string | null;
+  const shippingMaxDays = order.shipping_max_days as number | null;
   const products = order.products as Array<Record<string, unknown>> | null;
 
-  // Customer data is at the order level in Tiendanube, not nested
   const contactEmail = order.contact_email as string | null;
   const contactName = order.contact_name as string | null;
   const contactPhone = order.contact_phone as string | null;
+
+  // Calculate max delivery date
+  let maxDeliveryDate: string | null = null;
+  if (shippingMaxDays != null) {
+    const baseDate = shippedAt ? new Date(shippedAt) : new Date(createdAt);
+    const maxDate = new Date(baseDate);
+    maxDate.setDate(maxDate.getDate() + shippingMaxDays);
+    maxDeliveryDate = maxDate.toISOString();
+  }
+
+  // Tracking page URL (Tiendanube checkout tracking)
+  const storeId = order.store_id as number;
+  const token = order.token as string | null;
+  const trackingPageUrl = token
+    ? `https://www.tiendanube.com/checkout/${storeId}/order/${token}`
+    : shippingTrackingUrl;
 
   return {
     number: order.number,
@@ -67,6 +81,8 @@ export function formatOrderInfo(order: Record<string, unknown>) {
     shippingOption,
     shippingTracking,
     shippingTrackingUrl,
+    trackingPageUrl,
+    maxDeliveryDate,
     shippingAddress: shipping
       ? {
           address: shipping.address,
