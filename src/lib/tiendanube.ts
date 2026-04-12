@@ -104,7 +104,11 @@ export function formatOrderInfo(order: Record<string, unknown>, storeDomain?: st
           quantity: p.quantity as number,
           price: p.price as string,
           sku: p.sku as string,
+          variantId: (p.variant_id as number) ?? null,
+          productId: (p.product_id as number) ?? null,
         }))
       : [],
+    // Storefront URL (needed for shipping calculator)
+    storeUrl: storeDomain || null,
   };
 }

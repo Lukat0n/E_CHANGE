@@ -24,6 +24,10 @@ interface Claim {
   shippingPhone: string | null;
   shippingRecipientName: string | null;
   shippingRecipientLastName: string | null;
+  shippingMode: string | null;
+  shippingMethodCode: string | null;
+  shippingMethodName: string | null;
+  shippingCost: number | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }
@@ -75,14 +79,18 @@ export default function AdminDashboard({
   }
 
   function copyShippingData(claim: Claim) {
+    const isPickup = claim.shippingMode === "sucursal";
     const lines = [
+      claim.shippingMethodName ? `Método: ${claim.shippingMethodName}` : "",
+      claim.shippingCost != null ? `Costo envío: $${claim.shippingCost.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "",
+      `Modo: ${isPickup ? "Retiro en sucursal" : "Envío a domicilio"}`,
       `CP: ${claim.shippingZipcode}`,
       `Provincia: ${claim.shippingProvince}`,
       `Ciudad: ${claim.shippingCity}`,
-      `Calle: ${claim.shippingAddress}`,
-      `Número: ${claim.shippingNumber}`,
-      claim.shippingFloor ? `Depto: ${claim.shippingFloor}` : "",
-      claim.shippingNeighborhood ? `Barrio: ${claim.shippingNeighborhood}` : "",
+      !isPickup ? `Calle: ${claim.shippingAddress}` : "",
+      !isPickup ? `Número: ${claim.shippingNumber}` : "",
+      !isPickup && claim.shippingFloor ? `Depto: ${claim.shippingFloor}` : "",
+      !isPickup && claim.shippingNeighborhood ? `Barrio: ${claim.shippingNeighborhood}` : "",
       `Nombre: ${claim.shippingRecipientName || ""}${claim.shippingRecipientLastName ? ` ${claim.shippingRecipientLastName}` : ""}`,
       `Email: ${claim.customerEmail || ""}`,
       `Tel: ${claim.shippingPhone || ""}`,
@@ -306,18 +314,32 @@ export default function AdminDashboard({
                   </p>
                 </div>
 
-                {selectedClaim.type === "cambio" && selectedClaim.shippingAddress && (
+                {selectedClaim.type === "cambio" && selectedClaim.shippingZipcode && (
                   <div>
-                    <p className="text-sm font-medium text-gray-700 mb-1">Dirección de envío (cambio):</p>
+                    <p className="text-sm font-medium text-gray-700 mb-1">
+                      {selectedClaim.shippingMode === "sucursal" ? "Retiro en sucursal (cambio):" : "Dirección de envío (cambio):"}
+                    </p>
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1 text-sm">
+                      {selectedClaim.shippingMethodName && (
+                        <div className="flex justify-between pb-1 mb-1 border-b border-blue-200">
+                          <span className="font-medium text-gray-900">{selectedClaim.shippingMethodName}</span>
+                          {selectedClaim.shippingCost != null && (
+                            <span className="font-semibold text-gray-900">
+                              ${selectedClaim.shippingCost.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <p className="font-medium text-gray-900">
                         {selectedClaim.shippingRecipientName}{selectedClaim.shippingRecipientLastName ? ` ${selectedClaim.shippingRecipientLastName}` : ""}
                       </p>
-                      <p className="text-gray-900">
-                        {selectedClaim.shippingAddress} {selectedClaim.shippingNumber}
-                        {selectedClaim.shippingFloor ? ` - ${selectedClaim.shippingFloor}` : ""}
-                      </p>
-                      {selectedClaim.shippingNeighborhood && (
+                      {selectedClaim.shippingMode !== "sucursal" && selectedClaim.shippingAddress && (
+                        <p className="text-gray-900">
+                          {selectedClaim.shippingAddress} {selectedClaim.shippingNumber}
+                          {selectedClaim.shippingFloor ? ` - ${selectedClaim.shippingFloor}` : ""}
+                        </p>
+                      )}
+                      {selectedClaim.shippingMode !== "sucursal" && selectedClaim.shippingNeighborhood && (
                         <p className="text-gray-700">Barrio: {selectedClaim.shippingNeighborhood}</p>
                       )}
                       <p className="text-gray-700">
@@ -356,7 +378,7 @@ export default function AdminDashboard({
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2">
-                  {selectedClaim.type === "cambio" && selectedClaim.shippingAddress && (
+                  {selectedClaim.type === "cambio" && selectedClaim.shippingZipcode && (
                     <button
                       onClick={() => copyShippingData(selectedClaim)}
                       className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition flex items-center justify-center gap-2"

@@ -41,6 +41,11 @@ model Claim {
   shippingPhone         String?
   shippingRecipientName     String?
   shippingRecipientLastName String?
+  // Shipping method (selected via Envío Nube storefront calculator)
+  shippingMode         String?   // "domicilio" | "sucursal"
+  shippingMethodCode   String?
+  shippingMethodName   String?
+  shippingCost         Float?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

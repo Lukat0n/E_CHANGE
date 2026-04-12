@@ -32,7 +32,18 @@ interface OrderInfo {
     quantity: number;
     price: string;
     sku: string;
+    variantId: number | null;
+    productId: number | null;
   }>;
+  storeUrl: string | null;
+}
+
+interface ShippingOption {
+  code: string;
+  name: string;
+  price: number;
+  type: "delivery" | "pickup";
+  branches?: string[];
 }
 
 const CAMBIO_PRECIO = 9968;
@@ -101,6 +112,13 @@ export default function HomePage() {
   const [shipRecipientName, setShipRecipientName] = useState("");
   const [shipRecipientLastName, setShipRecipientLastName] = useState("");
   const [shipPhone, setShipPhone] = useState("");
+  // Shipping method selection
+  const [deliveryMode, setDeliveryMode] = useState<"domicilio" | "sucursal">("domicilio");
+  const [domicilioOptions, setDomicilioOptions] = useState<ShippingOption[]>([]);
+  const [sucursalOptions, setSucursalOptions] = useState<ShippingOption[]>([]);
+  const [selectedShippingCode, setSelectedShippingCode] = useState("");
+  const [calculatingShipping, setCalculatingShipping] = useState(false);
+  const [shippingError, setShippingError] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -137,6 +155,63 @@ export default function HomePage() {
       setVerifying(false);
     }
   }
+
+  async function calculateShipping(zip: string) {
+    if (!zip || zip.length < 4 || !orderInfo) return;
+    const variantId = orderInfo.products.find((p) => p.variantId)?.variantId;
+    if (!variantId) {
+      setShippingError("No pudimos identificar el producto para calcular el envío");
+      return;
+    }
+    setCalculatingShipping(true);
+    setShippingError("");
+    setDomicilioOptions([]);
+    setSucursalOptions([]);
+    setSelectedShippingCode("");
+    try {
+      const res = await fetch("/api/shipping/calculate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storeId: storeId || "default",
+          zipcode: zip,
+          variantId,
+          quantity: orderInfo.products.find((p) => p.variantId)?.quantity || 1,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "No se pudo calcular el envío");
+      setDomicilioOptions(data.domicilio || []);
+      setSucursalOptions(data.sucursal || []);
+      // Auto-select cheapest option of current mode
+      const initial = deliveryMode === "domicilio" ? data.domicilio : data.sucursal;
+      if (initial && initial.length > 0) {
+        const cheapest = [...initial].sort((a: ShippingOption, b: ShippingOption) => a.price - b.price)[0];
+        setSelectedShippingCode(cheapest.code);
+      }
+    } catch (err) {
+      setShippingError(err instanceof Error ? err.message : "Error calculando el envío");
+    } finally {
+      setCalculatingShipping(false);
+    }
+  }
+
+  // When switching delivery mode, auto-select cheapest option of that group
+  useEffect(() => {
+    const list = deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions;
+    if (list.length > 0) {
+      const currentIsInList = list.some((o) => o.code === selectedShippingCode);
+      if (!currentIsInList) {
+        const cheapest = [...list].sort((a, b) => a.price - b.price)[0];
+        setSelectedShippingCode(cheapest.code);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deliveryMode, domicilioOptions, sucursalOptions]);
+
+  const selectedShipping: ShippingOption | undefined = [...domicilioOptions, ...sucursalOptions].find(
+    (o) => o.code === selectedShippingCode
+  );
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -184,13 +259,19 @@ export default function HomePage() {
             shippingZipcode: shipZipcode,
             shippingProvince: shipProvince,
             shippingCity: shipCity,
-            shippingAddress: shipAddress,
-            shippingNumber: shipNumber,
-            shippingFloor: shipFloor,
-            shippingNeighborhood: shipNeighborhood,
+            // For pickup (sucursal) these can be blank
+            shippingAddress: deliveryMode === "domicilio" ? shipAddress : "",
+            shippingNumber: deliveryMode === "domicilio" ? shipNumber : "",
+            shippingFloor: deliveryMode === "domicilio" ? shipFloor : "",
+            shippingNeighborhood: deliveryMode === "domicilio" ? shipNeighborhood : "",
             shippingRecipientName: shipRecipientName,
             shippingRecipientLastName: shipRecipientLastName,
             shippingPhone: shipPhone,
+            // Shipping method
+            shippingMode: deliveryMode,
+            shippingMethodCode: selectedShipping?.code || "",
+            shippingMethodName: selectedShipping?.name || "",
+            shippingCost: selectedShipping?.price ?? null,
           }),
         }),
       });
@@ -249,6 +330,11 @@ export default function HomePage() {
               setShipRecipientName("");
               setShipRecipientLastName("");
               setShipPhone("");
+              setDeliveryMode("domicilio");
+              setDomicilioOptions([]);
+              setSucursalOptions([]);
+              setSelectedShippingCode("");
+              setShippingError("");
             }}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
           >
@@ -554,118 +640,223 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Step 3: Cambio - CP → Address → Recipient → Price → Submit */}
+          {/* Step 3: Cambio - CP → Shipping method → Address/Recipient → Submit */}
           {step === 3 && claimType === "cambio" && (
             <div className="space-y-5">
               <h2 className="text-xl font-semibold text-gray-900">Cambio de producto</h2>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center space-y-2">
-                <p className="text-gray-700 text-sm">Costo del cambio para la orden #{orderNumber}:</p>
-                <p className="text-3xl font-bold text-gray-900">
-                  ${CAMBIO_PRECIO.toLocaleString("es-AR")}
-                </p>
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+                <div className="flex justify-between text-sm text-gray-700">
+                  <span>Costo del cambio:</span>
+                  <span className="font-semibold">${CAMBIO_PRECIO.toLocaleString("es-AR")}</span>
+                </div>
+                {selectedShipping && (
+                  <div className="flex justify-between text-sm text-gray-700">
+                    <span>Envío ({selectedShipping.name}):</span>
+                    <span className="font-semibold">${selectedShipping.price.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+                <div className="border-t border-blue-200 pt-2 flex justify-between">
+                  <span className="font-semibold text-gray-900">Total</span>
+                  <span className="text-2xl font-bold text-gray-900">
+                    ${(CAMBIO_PRECIO + (selectedShipping?.price || 0)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
               </div>
 
-              {/* Destino - Código postal first */}
+              {/* Código postal + opciones de envío */}
               <div className="space-y-3 border border-gray-200 rounded-xl p-4">
-                <h3 className="font-semibold text-gray-900">Destino</h3>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Código postal *</label>
+                <h3 className="font-semibold text-gray-900">¿A dónde lo enviamos?</h3>
+                <div className="flex gap-2">
                   <input
                     type="text"
                     required
                     value={shipZipcode}
-                    onChange={(e) => setShipZipcode(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                    placeholder="Ingresá el código postal de destino"
+                    onChange={(e) => { setShipZipcode(e.target.value); setDomicilioOptions([]); setSucursalOptions([]); setSelectedShippingCode(""); }}
+                    className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                    placeholder="Código postal"
                   />
+                  <button
+                    type="button"
+                    onClick={() => calculateShipping(shipZipcode)}
+                    disabled={calculatingShipping || !shipZipcode}
+                    className="bg-blue-600 text-white px-5 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {calculatingShipping ? "Calculando..." : "Calcular envío"}
+                  </button>
                 </div>
+                {shippingError && (
+                  <p className="text-sm text-red-600">{shippingError}</p>
+                )}
 
-                {shipZipcode && (
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Provincia *</label>
-                        <select
-                          required
-                          value={shipProvince}
-                          onChange={(e) => setShipProvince(e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 bg-white"
+                {(domicilioOptions.length > 0 || sucursalOptions.length > 0) && (
+                  <div className="space-y-3 pt-2">
+                    {/* Mode toggle */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryMode("domicilio")}
+                        disabled={domicilioOptions.length === 0}
+                        className={`py-2.5 rounded-lg border-2 text-sm font-medium transition ${
+                          deliveryMode === "domicilio"
+                            ? "border-blue-600 bg-blue-50 text-blue-700"
+                            : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        Envío a domicilio
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryMode("sucursal")}
+                        disabled={sucursalOptions.length === 0}
+                        className={`py-2.5 rounded-lg border-2 text-sm font-medium transition ${
+                          deliveryMode === "sucursal"
+                            ? "border-blue-600 bg-blue-50 text-blue-700"
+                            : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        Retirar en sucursal
+                      </button>
+                    </div>
+
+                    {/* Options list for selected mode */}
+                    <div className="space-y-2">
+                      {(deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions).map((opt) => (
+                        <label
+                          key={opt.code}
+                          className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition ${
+                            selectedShippingCode === opt.code
+                              ? "border-blue-600 bg-blue-50"
+                              : "border-gray-200 hover:border-gray-300"
+                          }`}
                         >
-                          <option value="">Seleccioná una provincia</option>
-                          {[
-                            "Buenos Aires", "Ciudad Autónoma de Buenos Aires", "Catamarca", "Chaco",
-                            "Chubut", "Córdoba", "Corrientes", "Entre Ríos", "Formosa", "Jujuy",
-                            "La Pampa", "La Rioja", "Mendoza", "Misiones", "Neuquén", "Río Negro",
-                            "Salta", "San Juan", "San Luis", "Santa Cruz", "Santa Fe",
-                            "Santiago del Estero", "Tierra del Fuego", "Tucumán",
-                          ].map((p) => (
-                            <option key={p} value={p}>{p}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad *</label>
-                        <input
-                          type="text"
-                          required
-                          value={shipCity}
-                          onChange={(e) => setShipCity(e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                          placeholder="Ciudad"
-                        />
-                      </div>
+                          <input
+                            type="radio"
+                            name="shipping-option"
+                            value={opt.code}
+                            checked={selectedShippingCode === opt.code}
+                            onChange={() => setSelectedShippingCode(opt.code)}
+                            className="mt-1"
+                          />
+                          <div className="flex-1">
+                            <div className="flex justify-between gap-2">
+                              <span className="text-sm font-medium text-gray-900">{opt.name}</span>
+                              <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">
+                                ${opt.price.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            {opt.branches && opt.branches.length > 0 && (
+                              <details className="mt-1.5">
+                                <summary className="text-xs text-blue-600 cursor-pointer">Ver sucursales ({opt.branches.length})</summary>
+                                <ul className="text-xs text-gray-600 mt-1 space-y-0.5 pl-2">
+                                  {opt.branches.slice(0, 10).map((b, i) => (
+                                    <li key={i} className="capitalize">• {b}</li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )}
+                          </div>
+                        </label>
+                      ))}
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Calle *</label>
-                      <input
-                        type="text"
-                        required
-                        value={shipAddress}
-                        onChange={(e) => setShipAddress(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                        placeholder="Ingresá la calle"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Número *</label>
-                        <input
-                          type="text"
-                          required
-                          value={shipNumber}
-                          onChange={(e) => setShipNumber(e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                          placeholder="Número"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Departamento <span className="text-gray-400">(opcional)</span></label>
-                        <input
-                          type="text"
-                          value={shipFloor}
-                          onChange={(e) => setShipFloor(e.target.value)}
-                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                          placeholder="Piso / Depto"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Barrio</label>
-                      <input
-                        type="text"
-                        value={shipNeighborhood}
-                        onChange={(e) => setShipNeighborhood(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                        placeholder="Barrio"
-                      />
-                    </div>
-                  </>
+                  </div>
                 )}
               </div>
 
+              {/* Province + city (always shown once options loaded) */}
+              {selectedShipping && (
+                <div className="space-y-3 border border-gray-200 rounded-xl p-4">
+                  <h3 className="font-semibold text-gray-900">
+                    {deliveryMode === "domicilio" ? "Dirección de entrega" : "Localidad de la sucursal"}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Provincia *</label>
+                      <select
+                        required
+                        value={shipProvince}
+                        onChange={(e) => setShipProvince(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 bg-white"
+                      >
+                        <option value="">Seleccioná una provincia</option>
+                        {[
+                          "Buenos Aires", "Ciudad Autónoma de Buenos Aires", "Catamarca", "Chaco",
+                          "Chubut", "Córdoba", "Corrientes", "Entre Ríos", "Formosa", "Jujuy",
+                          "La Pampa", "La Rioja", "Mendoza", "Misiones", "Neuquén", "Río Negro",
+                          "Salta", "San Juan", "San Luis", "Santa Cruz", "Santa Fe",
+                          "Santiago del Estero", "Tierra del Fuego", "Tucumán",
+                        ].map((p) => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Ciudad *</label>
+                      <input
+                        type="text"
+                        required
+                        value={shipCity}
+                        onChange={(e) => setShipCity(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                        placeholder="Ciudad"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Address only for domicilio */}
+                  {deliveryMode === "domicilio" && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Calle *</label>
+                        <input
+                          type="text"
+                          required
+                          value={shipAddress}
+                          onChange={(e) => setShipAddress(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                          placeholder="Ingresá la calle"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Número *</label>
+                          <input
+                            type="text"
+                            required
+                            value={shipNumber}
+                            onChange={(e) => setShipNumber(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                            placeholder="Número"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Departamento <span className="text-gray-400">(opcional)</span></label>
+                          <input
+                            type="text"
+                            value={shipFloor}
+                            onChange={(e) => setShipFloor(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                            placeholder="Piso / Depto"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Barrio</label>
+                        <input
+                          type="text"
+                          value={shipNeighborhood}
+                          onChange={(e) => setShipNeighborhood(e.target.value)}
+                          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                          placeholder="Barrio"
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               {/* Datos del destinatario */}
-              {shipZipcode && (
+              {selectedShipping && (
                 <div className="space-y-3 border border-gray-200 rounded-xl p-4">
                   <h3 className="font-semibold text-gray-900">Datos del destinatario</h3>
                   <div className="grid grid-cols-2 gap-3">
@@ -722,7 +913,16 @@ export default function HomePage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading || !shipZipcode || !shipProvince || !shipCity || !shipAddress || !shipNumber || !shipRecipientName || !shipPhone}
+                  disabled={
+                    loading ||
+                    !selectedShipping ||
+                    !shipZipcode ||
+                    !shipProvince ||
+                    !shipCity ||
+                    (deliveryMode === "domicilio" && (!shipAddress || !shipNumber)) ||
+                    !shipRecipientName ||
+                    !shipPhone
+                  }
                   className="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {loading ? "Enviando..." : "Solicitar cambio"}

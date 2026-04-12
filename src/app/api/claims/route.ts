@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
     shippingAddress, shippingNumber, shippingFloor, shippingNeighborhood,
     shippingCity, shippingProvince, shippingZipcode, shippingPhone,
     shippingRecipientName, shippingRecipientLastName,
+    shippingMode, shippingMethodCode, shippingMethodName, shippingCost,
   } = body;
 
   if (!orderNumber || !type) {
@@ -86,6 +87,10 @@ export async function POST(req: NextRequest) {
         shippingPhone: shippingPhone || null,
         shippingRecipientName: shippingRecipientName || null,
         shippingRecipientLastName: shippingRecipientLastName || null,
+        shippingMode: shippingMode || null,
+        shippingMethodCode: shippingMethodCode || null,
+        shippingMethodName: shippingMethodName || null,
+        shippingCost: typeof shippingCost === "number" ? shippingCost : null,
       },
     });
     return NextResponse.json(claim, { status: 201 });
@@ -112,6 +117,10 @@ export async function POST(req: NextRequest) {
       shippingPhone,
       shippingRecipientName,
       shippingRecipientLastName,
+      shippingMode,
+      shippingMethodCode,
+      shippingMethodName,
+      shippingCost,
       createdAt: new Date().toISOString(),
     }, { status: 201 });
   }

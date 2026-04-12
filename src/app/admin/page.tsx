@@ -25,6 +25,10 @@ interface Claim {
   shippingPhone: string | null;
   shippingRecipientName: string | null;
   shippingRecipientLastName: string | null;
+  shippingMode: string | null;
+  shippingMethodCode: string | null;
+  shippingMethodName: string | null;
+  shippingCost: number | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }
