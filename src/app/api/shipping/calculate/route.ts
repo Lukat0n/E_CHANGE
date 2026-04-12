@@ -156,9 +156,12 @@ export async function POST(req: NextRequest) {
   try {
     const options = await fetchShippingOptions(storeUrl, String(zipcode), Number(variantId), Number(quantity) || 1);
 
-    // Split into domicilio (delivery) and sucursal (pickup)
-    const domicilio = options.filter((o) => o.type === "delivery");
-    const sucursal = options.filter((o) => o.type === "pickup");
+    // Filter out free-shipping promotions: cambios never go free, only first shipment does.
+    // The storefront /envio/ endpoint applies the "envío gratis" promo automatically; we strip it out.
+    const paid = options.filter((o) => o.price > 0);
+
+    const domicilio = paid.filter((o) => o.type === "delivery");
+    const sucursal = paid.filter((o) => o.type === "pickup");
 
     return NextResponse.json({ domicilio, sucursal });
   } catch (err) {
