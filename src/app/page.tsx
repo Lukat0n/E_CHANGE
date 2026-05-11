@@ -117,6 +117,7 @@ export default function HomePage() {
   // Override "block no_recibido" if customer explicitly says it wasn't received
   // (e.g. shipping_status says delivered but customer never got it)
   const [overrideNotDelivered, setOverrideNotDelivered] = useState(false);
+  const [showOverrideConfirm, setShowOverrideConfirm] = useState(false);
   // Shipping method selection
   const [deliveryMode, setDeliveryMode] = useState<"domicilio" | "sucursal">("domicilio");
   const [domicilioOptions, setDomicilioOptions] = useState<ShippingOption[]>([]);
@@ -349,6 +350,7 @@ export default function HomePage() {
               setSelectedShippingCode("");
               setShippingError("");
               setOverrideNotDelivered(false);
+              setShowOverrideConfirm(false);
             }}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
           >
@@ -574,7 +576,7 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2 pl-7">
+                  <div className="flex flex-wrap gap-3 pl-7">
                     {orderInfo?.trackingPageUrl && (
                       <a
                         href={orderInfo.trackingPageUrl}
@@ -588,16 +590,49 @@ export default function HomePage() {
                         Ver seguimiento
                       </a>
                     )}
-                    {(isDelivered || isShipped) && (
+                    {(isDelivered || isShipped) && !showOverrideConfirm && (
                       <button
                         type="button"
-                        onClick={() => setOverrideNotDelivered(true)}
+                        onClick={() => setShowOverrideConfirm(true)}
                         className={`text-sm font-medium underline ${isDelivered ? "text-green-700 hover:text-green-900" : "text-yellow-700 hover:text-yellow-900"}`}
                       >
-                        {isDelivered ? "¿No se entregó? Notificar" : "No me llegó - reclamar ahora"}
+                        {isDelivered ? "¿No se entregó?" : "No me llegó - reclamar ahora"}
                       </button>
                     )}
                   </div>
+
+                  {showOverrideConfirm && (
+                    <div className="ml-7 mt-2 bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+                      <div>
+                        <p className="font-medium text-gray-900 text-sm">
+                          {isDelivered
+                            ? "¿Estás seguro de que no recibiste el pedido?"
+                            : "¿Confirmás que querés reclamar antes del plazo?"}
+                        </p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          {isDelivered
+                            ? "Según el seguimiento del transportista, este pedido figura como entregado. Si lo notificás como no recibido vamos a abrir un caso para revisarlo."
+                            : "Tu pedido todavía está dentro del plazo de entrega. Si lo reclamás ahora, podemos pedirte que esperes hasta la fecha límite antes de resolverlo."}
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowOverrideConfirm(false)}
+                          className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setOverrideNotDelivered(true); setShowOverrideConfirm(false); }}
+                          className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition"
+                        >
+                          Sí, notificar
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
