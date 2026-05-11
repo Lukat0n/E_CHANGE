@@ -50,3 +50,6 @@ next-env.d.ts
 # database
 *.db
 *.db-journal
+
+# local scratch
+/tmp/
