@@ -114,6 +114,9 @@ export default function HomePage() {
   const [shipRecipientName, setShipRecipientName] = useState("");
   const [shipRecipientLastName, setShipRecipientLastName] = useState("");
   const [shipPhone, setShipPhone] = useState("");
+  // Override "block no_recibido" if customer explicitly says it wasn't received
+  // (e.g. shipping_status says delivered but customer never got it)
+  const [overrideNotDelivered, setOverrideNotDelivered] = useState(false);
   // Shipping method selection
   const [deliveryMode, setDeliveryMode] = useState<"domicilio" | "sucursal">("domicilio");
   const [domicilioOptions, setDomicilioOptions] = useState<ShippingOption[]>([]);
@@ -293,7 +296,15 @@ export default function HomePage() {
 
   // Determine what to show based on claim type
   const deliveryExpired = orderInfo ? isDeliveryExpired(orderInfo.maxDeliveryDate) : false;
-  const noRecibidoBlocked = claimType === "no_recibido" && !deliveryExpired;
+  const isDelivered = orderInfo?.shippingStatus === "delivered";
+  const isShipped = orderInfo ? (orderInfo.shippingStatus === "shipped" || orderInfo.shippingStatus === "fulfilled") : false;
+  // Block no_recibido unless:
+  //  - delivery date already passed (and not delivered), OR
+  //  - customer clicked "no se entregó" to override (delivered case or in-transit case)
+  const noRecibidoBlocked =
+    claimType === "no_recibido" &&
+    !overrideNotDelivered &&
+    !(deliveryExpired && !isDelivered);
 
   if (success) {
     return (
@@ -337,6 +348,7 @@ export default function HomePage() {
               setSucursalOptions([]);
               setSelectedShippingCode("");
               setShippingError("");
+              setOverrideNotDelivered(false);
             }}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
           >
@@ -518,13 +530,28 @@ export default function HomePage() {
 
               {/* No recibido blocked message */}
               {noRecibidoBlocked && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 space-y-2">
+                <div className={`${isDelivered ? "bg-green-50 border-green-200" : "bg-yellow-50 border-yellow-200"} border rounded-xl p-4 space-y-3`}>
                   <div className="flex items-start gap-2">
-                    <svg className="w-5 h-5 text-yellow-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                    </svg>
+                    {isDelivered ? (
+                      <svg className="w-5 h-5 text-green-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-yellow-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                      </svg>
+                    )}
                     <div>
-                      {orderInfo?.maxDeliveryDate ? (
+                      {isDelivered ? (
+                        <>
+                          <p className="font-medium text-green-800">
+                            Tu pedido figura como entregado
+                          </p>
+                          <p className="text-sm text-green-700 mt-1">
+                            Según el seguimiento, este pedido ya fue entregado. Si no lo recibiste, podés notificarnos para que revisemos.
+                          </p>
+                        </>
+                      ) : isShipped && orderInfo?.maxDeliveryDate ? (
                         <>
                           <p className="font-medium text-yellow-800">
                             Tu pedido todavía está dentro del plazo de entrega
@@ -546,19 +573,31 @@ export default function HomePage() {
                       )}
                     </div>
                   </div>
-                  {orderInfo?.trackingPageUrl && (
-                    <a
-                      href={orderInfo.trackingPageUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 mt-1"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                      Ver seguimiento de mi pedido
-                    </a>
-                  )}
+
+                  <div className="flex flex-wrap gap-2 pl-7">
+                    {orderInfo?.trackingPageUrl && (
+                      <a
+                        href={orderInfo.trackingPageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        Ver seguimiento
+                      </a>
+                    )}
+                    {(isDelivered || isShipped) && (
+                      <button
+                        type="button"
+                        onClick={() => setOverrideNotDelivered(true)}
+                        className={`text-sm font-medium underline ${isDelivered ? "text-green-700 hover:text-green-900" : "text-yellow-700 hover:text-yellow-900"}`}
+                      >
+                        {isDelivered ? "¿No se entregó? Notificar" : "No me llegó - reclamar ahora"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
