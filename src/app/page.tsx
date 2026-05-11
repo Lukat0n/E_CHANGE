@@ -77,8 +77,10 @@ function formatDate(dateStr: string) {
   });
 }
 
+// Returns true only if the order was shipped AND the carrier's max delivery date has passed.
+// If the order was never shipped, returns false (so the customer can't reclaim "no recibido" yet).
 function isDeliveryExpired(maxDeliveryDate: string | null): boolean {
-  if (!maxDeliveryDate) return true; // If no date, allow
+  if (!maxDeliveryDate) return false;
   const now = new Date();
   now.setHours(0, 0, 0, 0);
   const max = new Date(maxDeliveryDate);
@@ -522,13 +524,26 @@ export default function HomePage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
                     </svg>
                     <div>
-                      <p className="font-medium text-yellow-800">
-                        Tu pedido todavía está dentro del plazo de entrega
-                      </p>
-                      <p className="text-sm text-yellow-700 mt-1">
-                        La fecha límite de entrega es el <strong>{orderInfo?.maxDeliveryDate ? formatDate(orderInfo.maxDeliveryDate) : "-"}</strong>.
-                        Podés hacer este reclamo a partir del día siguiente si no recibiste tu pedido.
-                      </p>
+                      {orderInfo?.maxDeliveryDate ? (
+                        <>
+                          <p className="font-medium text-yellow-800">
+                            Tu pedido todavía está dentro del plazo de entrega
+                          </p>
+                          <p className="text-sm text-yellow-700 mt-1">
+                            La fecha límite de entrega es el <strong>{formatDate(orderInfo.maxDeliveryDate)}</strong>.
+                            Podés hacer este reclamo a partir del día siguiente si no recibiste tu pedido.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-medium text-yellow-800">
+                            Tu pedido todavía no fue enviado
+                          </p>
+                          <p className="text-sm text-yellow-700 mt-1">
+                            Cuando lo despachemos vas a poder ver el plazo de entrega. Si no recibís tu pedido pasado ese plazo, podés volver y hacer este reclamo.
+                          </p>
+                        </>
+                      )}
                     </div>
                   </div>
                   {orderInfo?.trackingPageUrl && (

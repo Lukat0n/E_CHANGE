@@ -54,11 +54,12 @@ export function formatOrderInfo(order: Record<string, unknown>, storeDomain?: st
   const contactName = order.contact_name as string | null;
   const contactPhone = order.contact_phone as string | null;
 
-  // Calculate max delivery date
+  // Calculate max delivery date — only if the order has actually been shipped.
+  // Tiendanube only populates shipped_at when shipping_status flips to "shipped".
+  // If the order isn't shipped yet, there's no countdown and the customer can't reclaim "no recibido".
   let maxDeliveryDate: string | null = null;
-  if (shippingMaxDays != null) {
-    const baseDate = shippedAt ? new Date(shippedAt) : new Date(createdAt);
-    const maxDate = new Date(baseDate);
+  if (shippedAt && shippingMaxDays != null) {
+    const maxDate = new Date(shippedAt);
     maxDate.setDate(maxDate.getDate() + shippingMaxDays);
     maxDeliveryDate = maxDate.toISOString();
   }
