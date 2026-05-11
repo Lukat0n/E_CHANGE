@@ -636,8 +636,8 @@ export default function HomePage() {
                 </div>
               )}
 
-              {/* Description for reclamo and no_recibido */}
-              {(claimType === "reclamo" || (claimType === "no_recibido" && deliveryExpired)) && (
+              {/* Description for reclamo and no_recibido (whenever the claim isn't blocked) */}
+              {(claimType === "reclamo" || (claimType === "no_recibido" && !noRecibidoBlocked)) && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Descripción *</label>
                   <textarea
