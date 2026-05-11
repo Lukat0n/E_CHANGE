@@ -26,8 +26,8 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json(claims);
-  } catch {
-    // DB not available, return empty
+  } catch (err) {
+    console.error("[claims GET] DB read failed:", err);
     return NextResponse.json([]);
   }
 }
@@ -94,34 +94,14 @@ export async function POST(req: NextRequest) {
       },
     });
     return NextResponse.json(claim, { status: 201 });
-  } catch {
-    // DB not available - still accept the claim (could send email, log, etc.)
-    return NextResponse.json({
-      id: `temp-${Date.now()}`,
-      storeId: store.storeId,
-      orderNumber,
-      type,
-      description,
-      photoUrl,
-      status: "pendiente",
-      customerName,
-      customerEmail,
-      customerPhone,
-      shippingAddress,
-      shippingNumber,
-      shippingFloor,
-      shippingNeighborhood,
-      shippingCity,
-      shippingProvince,
-      shippingZipcode,
-      shippingPhone,
-      shippingRecipientName,
-      shippingRecipientLastName,
-      shippingMode,
-      shippingMethodCode,
-      shippingMethodName,
-      shippingCost,
-      createdAt: new Date().toISOString(),
-    }, { status: 201 });
+  } catch (err) {
+    // Log the real error so it shows up in Vercel logs.
+    // Don't silently fake a success — that hides bugs and the customer thinks the claim went through.
+    console.error("[claims POST] DB write failed:", err);
+    const message = err instanceof Error ? err.message : "Error guardando el reclamo";
+    return NextResponse.json(
+      { error: `No se pudo guardar el reclamo: ${message}` },
+      { status: 500 }
+    );
   }
 }
