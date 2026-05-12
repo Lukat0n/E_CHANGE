@@ -49,8 +49,8 @@ export async function testLogin() {
       timeout: 45000,
     });
 
-    // Esperar bastante por si hay interstitial de Cloudflare o SPA hidratando
-    await page.waitForTimeout(8000);
+    // Esperar a que cargue el "picker" de login (Google / Apple / e-mail)
+    await page.waitForTimeout(4000);
 
     // Cerrar cookie banner si aparece (no bloqueante)
     const cookieBtns = [
@@ -68,22 +68,42 @@ export async function testLogin() {
       }
     }
 
-    // Buscar el primer input visible que parezca email/usuario
+    // Click en "Ingresar con e-mail" para revelar el form de email+password.
+    // El picker inicial tiene 3 opciones: Google, Apple y e-mail.
+    const emailButton = page
+      .locator('button:has-text("Ingresar con e-mail"), a:has-text("Ingresar con e-mail"), [data-component*="email"]')
+      .first();
+
+    try {
+      await emailButton.waitFor({ state: "visible", timeout: 10000 });
+      await emailButton.click();
+    } catch {
+      const dump = await debugDump(page, "No encontré el botón 'Ingresar con e-mail'");
+      return dump;
+    }
+
+    // Esperar a que el form de email+password se haga visible
+    await page.waitForTimeout(1500);
+
+    // Inputs reales de Tiendanube: name="user-mail" y name="pass"
     const emailLocator = page
-      .locator('input[type="email"], input[name="email"], input[name="user"], input[name="username"], input[id*="email" i], input[id*="user" i]')
+      .locator('input[name="user-mail"], input[type="email"], input[id="user-mail"]')
       .filter({ visible: true })
       .first();
 
     try {
-      await emailLocator.waitFor({ state: "visible", timeout: 15000 });
+      await emailLocator.waitFor({ state: "visible", timeout: 10000 });
     } catch {
-      const dump = await debugDump(page, "No apareció un input de email visible");
+      const dump = await debugDump(page, "No apareció el input de email después de clickear 'Ingresar con e-mail'");
       return dump;
     }
 
     await emailLocator.fill(user);
 
-    const passLocator = page.locator('input[type="password"]').filter({ visible: true }).first();
+    const passLocator = page
+      .locator('input[name="pass"], input[type="password"], input[id="pass"]')
+      .filter({ visible: true })
+      .first();
     await passLocator.waitFor({ state: "visible", timeout: 10000 });
     await passLocator.fill(pass);
 
