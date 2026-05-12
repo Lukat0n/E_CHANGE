@@ -23,14 +23,16 @@ export async function testLogin() {
     });
     const page = await context.newPage();
 
-    // Tiendanube tiene varios puntos de login; vamos al universal
+    // Tiendanube tiene varios puntos de login; vamos al universal.
+    // Usamos "domcontentloaded" (no "networkidle") porque las páginas de Tiendanube
+    // cargan scripts de analytics constantemente y nunca llegan a estar idle.
     await page.goto("https://www.tiendanube.com/login", {
-      waitUntil: "networkidle",
-      timeout: 30000,
+      waitUntil: "domcontentloaded",
+      timeout: 45000,
     });
 
-    // Dejar que cualquier banner/modal aparezca
-    await page.waitForTimeout(1500);
+    // Dejar que el JS hidrate y los inputs queden visibles
+    await page.waitForTimeout(2500);
 
     // Cerrar cookie banner si aparece (no bloqueante)
     const cookieBtns = [
@@ -76,7 +78,9 @@ export async function testLogin() {
     const navPromise = page.waitForURL(/.+/, { timeout: 30000 }).catch(() => null);
     await submitLocator.click();
     await navPromise;
-    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    // Esperar el DOM cargado, no networkidle (Tiendanube nunca llega a idle por analytics)
+    await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(2000); // dar tiempo a redirects post-login
 
     const finalUrl = page.url();
     const title = await page.title();
