@@ -49,8 +49,8 @@ export async function testLogin() {
       timeout: 45000,
     });
 
-    // Dejar que el JS hidrate y los inputs queden visibles
-    await page.waitForTimeout(2500);
+    // Esperar bastante por si hay interstitial de Cloudflare o SPA hidratando
+    await page.waitForTimeout(8000);
 
     // Cerrar cookie banner si aparece (no bloqueante)
     const cookieBtns = [
@@ -77,7 +77,8 @@ export async function testLogin() {
     try {
       await emailLocator.waitFor({ state: "visible", timeout: 15000 });
     } catch {
-      return debugDump(page, "No apareció un input de email visible");
+      const dump = await debugDump(page, "No apareció un input de email visible");
+      return dump;
     }
 
     await emailLocator.fill(user);
@@ -106,7 +107,8 @@ export async function testLogin() {
 
     if (!looksLoggedIn) {
       // Login falló — devolvemos info para debug
-      return debugDump(page, "Login no avanzó (sigue en /login). Probablemente credenciales o captcha.");
+      const dump = await debugDump(page, "Login no avanzó (sigue en /login). Probablemente credenciales o captcha.");
+      return dump;
     }
 
     return {
