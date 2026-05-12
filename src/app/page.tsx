@@ -117,8 +117,8 @@ export default function HomePage() {
   // Override "block no_recibido" if customer explicitly says it wasn't received
   // (e.g. shipping_status says delivered but customer never got it)
   const [overrideNotDelivered, setOverrideNotDelivered] = useState(false);
-  // Shipping method selection
-  const [deliveryMode, setDeliveryMode] = useState<"domicilio" | "sucursal">("domicilio");
+  // Shipping method selection: "domicilio" (a casa) | "sucursal" (correo) | "presencial" (depósito)
+  const [deliveryMode, setDeliveryMode] = useState<"domicilio" | "sucursal" | "presencial">("domicilio");
   const [domicilioOptions, setDomicilioOptions] = useState<ShippingOption[]>([]);
   const [sucursalOptions, setSucursalOptions] = useState<ShippingOption[]>([]);
   const [selectedShippingCode, setSelectedShippingCode] = useState("");
@@ -201,8 +201,10 @@ export default function HomePage() {
     }
   }
 
-  // When switching delivery mode, auto-select cheapest option of that group
+  // When switching delivery mode, auto-select cheapest option of that group.
+  // Skipped for "presencial" since there's no carrier option to pick.
   useEffect(() => {
+    if (deliveryMode === "presencial") return;
     const list = deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions;
     if (list.length > 0) {
       const currentIsInList = list.some((o) => o.code === selectedShippingCode);
@@ -261,10 +263,10 @@ export default function HomePage() {
           customerEmail: orderInfo?.customer?.email || customerEmail,
           customerPhone: orderInfo?.customer?.phone || "",
           ...(claimType === "cambio" && {
-            shippingZipcode: shipZipcode,
-            shippingProvince: shipProvince,
-            shippingCity: shipCity,
-            // For pickup (sucursal) these can be blank
+            // For presencial we don't collect CP/dirección
+            shippingZipcode: deliveryMode === "presencial" ? "" : shipZipcode,
+            shippingProvince: deliveryMode === "presencial" ? "" : shipProvince,
+            shippingCity: deliveryMode === "presencial" ? "" : shipCity,
             shippingAddress: deliveryMode === "domicilio" ? shipAddress : "",
             shippingNumber: deliveryMode === "domicilio" ? shipNumber : "",
             shippingFloor: deliveryMode === "domicilio" ? shipFloor : "",
@@ -274,9 +276,11 @@ export default function HomePage() {
             shippingPhone: shipPhone,
             // Shipping method
             shippingMode: deliveryMode,
-            shippingMethodCode: selectedShipping?.code || "",
-            shippingMethodName: selectedShipping?.name || "",
-            shippingCost: selectedShipping?.price ?? null,
+            shippingMethodCode: deliveryMode === "presencial" ? "presencial-deposito" : (selectedShipping?.code || ""),
+            shippingMethodName: deliveryMode === "presencial"
+              ? "Retiro en depósito - La Espuela 2757, Ituzaingó (hasta 19hs)"
+              : (selectedShipping?.name || ""),
+            shippingCost: deliveryMode === "presencial" ? 0 : (selectedShipping?.price ?? null),
           }),
         }),
       });
@@ -721,126 +725,183 @@ export default function HomePage() {
             <div className="space-y-5">
               <h2 className="text-xl font-semibold text-gray-900">Cambio de producto</h2>
 
+              {/* Resumen de precios */}
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
-                <div className="flex justify-between text-sm text-gray-700">
-                  <span>Costo del cambio:</span>
-                  <span className="font-semibold">${CAMBIO_PRECIO.toLocaleString("es-AR")}</span>
-                </div>
-                {selectedShipping && (
-                  <div className="flex justify-between text-sm text-gray-700">
-                    <span>Envío ({selectedShipping.name}):</span>
-                    <span className="font-semibold">${selectedShipping.price.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
+                {deliveryMode === "presencial" ? (
+                  <>
+                    <div className="flex justify-between text-sm text-gray-700">
+                      <span>Cambio presencial en depósito:</span>
+                      <span className="font-semibold text-green-700">Sin costo</span>
+                    </div>
+                    <div className="border-t border-blue-200 pt-2 flex justify-between">
+                      <span className="font-semibold text-gray-900">Total</span>
+                      <span className="text-2xl font-bold text-green-700">Gratis</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-sm text-gray-700">
+                      <span>Costo del cambio (envíos):</span>
+                      <span className="font-semibold">${CAMBIO_PRECIO.toLocaleString("es-AR")}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 -mt-1">
+                      Cubre el envío del producto original a nuestro depósito y el envío del producto nuevo a tu dirección.
+                    </p>
+                    {selectedShipping && (
+                      <div className="flex justify-between text-sm text-gray-700">
+                        <span>Envío ({selectedShipping.name}):</span>
+                        <span className="font-semibold">${selectedShipping.price.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+                    <div className="border-t border-blue-200 pt-2 flex justify-between">
+                      <span className="font-semibold text-gray-900">Total</span>
+                      <span className="text-2xl font-bold text-gray-900">
+                        ${(CAMBIO_PRECIO + (selectedShipping?.price || 0)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </>
                 )}
-                <div className="border-t border-blue-200 pt-2 flex justify-between">
-                  <span className="font-semibold text-gray-900">Total</span>
-                  <span className="text-2xl font-bold text-gray-900">
-                    ${(CAMBIO_PRECIO + (selectedShipping?.price || 0)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </span>
-                </div>
               </div>
 
-              {/* Código postal + opciones de envío */}
+              {/* Selector de modo (siempre visible arriba) */}
               <div className="space-y-3 border border-gray-200 rounded-xl p-4">
-                <h3 className="font-semibold text-gray-900">¿A dónde lo enviamos?</h3>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    required
-                    value={shipZipcode}
-                    onChange={(e) => { setShipZipcode(e.target.value); setDomicilioOptions([]); setSucursalOptions([]); setSelectedShippingCode(""); }}
-                    className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                    placeholder="Código postal"
-                  />
+                <h3 className="font-semibold text-gray-900">¿Cómo querés hacer el cambio?</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => calculateShipping(shipZipcode)}
-                    disabled={calculatingShipping || !shipZipcode}
-                    className="bg-blue-600 text-white px-5 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => { setDeliveryMode("domicilio"); setSelectedShippingCode(""); }}
+                    className={`py-3 px-3 rounded-lg border-2 text-sm font-medium transition text-left ${
+                      deliveryMode === "domicilio"
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                    }`}
                   >
-                    {calculatingShipping ? "Calculando..." : "Calcular envío"}
+                    <div className="font-semibold">Envío a domicilio</div>
+                    <div className="text-xs opacity-75 mt-0.5">Correo Argentino · pago</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setDeliveryMode("sucursal"); setSelectedShippingCode(""); }}
+                    className={`py-3 px-3 rounded-lg border-2 text-sm font-medium transition text-left ${
+                      deliveryMode === "sucursal"
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="font-semibold">Retirar en sucursal</div>
+                    <div className="text-xs opacity-75 mt-0.5">Sucursal del Correo · pago</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setDeliveryMode("presencial"); setSelectedShippingCode(""); setShipZipcode(""); }}
+                    className={`py-3 px-3 rounded-lg border-2 text-sm font-medium transition text-left ${
+                      deliveryMode === "presencial"
+                        ? "border-green-600 bg-green-50 text-green-700"
+                        : "border-gray-200 text-gray-600 hover:border-gray-300"
+                    }`}
+                  >
+                    <div className="font-semibold">Retiro en depósito</div>
+                    <div className="text-xs opacity-75 mt-0.5">Gratis · presencial</div>
                   </button>
                 </div>
-                {shippingError && (
-                  <p className="text-sm text-red-600">{shippingError}</p>
-                )}
-
-                {(domicilioOptions.length > 0 || sucursalOptions.length > 0) && (
-                  <div className="space-y-3 pt-2">
-                    {/* Mode toggle */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDeliveryMode("domicilio")}
-                        disabled={domicilioOptions.length === 0}
-                        className={`py-2.5 rounded-lg border-2 text-sm font-medium transition ${
-                          deliveryMode === "domicilio"
-                            ? "border-blue-600 bg-blue-50 text-blue-700"
-                            : "border-gray-200 text-gray-600 hover:border-gray-300"
-                        } disabled:opacity-50 disabled:cursor-not-allowed`}
-                      >
-                        Envío a domicilio
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeliveryMode("sucursal")}
-                        disabled={sucursalOptions.length === 0}
-                        className={`py-2.5 rounded-lg border-2 text-sm font-medium transition ${
-                          deliveryMode === "sucursal"
-                            ? "border-blue-600 bg-blue-50 text-blue-700"
-                            : "border-gray-200 text-gray-600 hover:border-gray-300"
-                        } disabled:opacity-50 disabled:cursor-not-allowed`}
-                      >
-                        Retirar en sucursal
-                      </button>
-                    </div>
-
-                    {/* Options list for selected mode */}
-                    <div className="space-y-2">
-                      {(deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions).map((opt) => (
-                        <label
-                          key={opt.code}
-                          className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition ${
-                            selectedShippingCode === opt.code
-                              ? "border-blue-600 bg-blue-50"
-                              : "border-gray-200 hover:border-gray-300"
-                          }`}
-                        >
-                          <input
-                            type="radio"
-                            name="shipping-option"
-                            value={opt.code}
-                            checked={selectedShippingCode === opt.code}
-                            onChange={() => setSelectedShippingCode(opt.code)}
-                            className="mt-1"
-                          />
-                          <div className="flex-1">
-                            <div className="flex justify-between gap-2">
-                              <span className="text-sm font-medium text-gray-900">{opt.name}</span>
-                              <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">
-                                ${opt.price.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                            </div>
-                            {opt.branches && opt.branches.length > 0 && (
-                              <details className="mt-1.5">
-                                <summary className="text-xs text-blue-600 cursor-pointer">Ver sucursales ({opt.branches.length})</summary>
-                                <ul className="text-xs text-gray-600 mt-1 space-y-0.5 pl-2">
-                                  {opt.branches.slice(0, 10).map((b, i) => (
-                                    <li key={i} className="capitalize">• {b}</li>
-                                  ))}
-                                </ul>
-                              </details>
-                            )}
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
 
-              {/* Province + city (always shown once options loaded) */}
-              {selectedShipping && (
+              {/* Info del depósito (solo presencial) */}
+              {deliveryMode === "presencial" && (
+                <div className="border-2 border-green-200 bg-green-50 rounded-xl p-4 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <svg className="w-5 h-5 text-green-600 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900">Depósito Gelica</p>
+                      <p className="text-sm text-gray-700">La Espuela 2757, Ituzaingó</p>
+                      <p className="text-sm text-gray-700"><span className="font-medium">Horario:</span> hasta las 19:00 hs</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-green-800 bg-white/50 rounded p-2">
+                    Llevá el producto original y te entregamos el nuevo. Te vamos a contactar para coordinar el día y horario.
+                  </p>
+                </div>
+              )}
+
+              {/* Código postal + opciones de envío (solo domicilio/sucursal) */}
+              {(deliveryMode === "domicilio" || deliveryMode === "sucursal") && (
+                <div className="space-y-3 border border-gray-200 rounded-xl p-4">
+                  <h3 className="font-semibold text-gray-900">Calculá el costo del envío</h3>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      required
+                      value={shipZipcode}
+                      onChange={(e) => { setShipZipcode(e.target.value); setDomicilioOptions([]); setSucursalOptions([]); setSelectedShippingCode(""); }}
+                      className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                      placeholder="Código postal de destino"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => calculateShipping(shipZipcode)}
+                      disabled={calculatingShipping || !shipZipcode}
+                      className="bg-blue-600 text-white px-5 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {calculatingShipping ? "Calculando..." : "Calcular"}
+                    </button>
+                  </div>
+                  {shippingError && (
+                    <p className="text-sm text-red-600">{shippingError}</p>
+                  )}
+
+                  {(domicilioOptions.length > 0 || sucursalOptions.length > 0) && (
+                    <div className="space-y-2 pt-2">
+                      {(deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions).length === 0 ? (
+                        <p className="text-sm text-gray-600 italic">No hay opciones disponibles para este modo y CP. Probá con otro.</p>
+                      ) : (
+                        (deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions).map((opt) => (
+                          <label
+                            key={opt.code}
+                            className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition ${
+                              selectedShippingCode === opt.code
+                                ? "border-blue-600 bg-blue-50"
+                                : "border-gray-200 hover:border-gray-300"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="shipping-option"
+                              value={opt.code}
+                              checked={selectedShippingCode === opt.code}
+                              onChange={() => setSelectedShippingCode(opt.code)}
+                              className="mt-1"
+                            />
+                            <div className="flex-1">
+                              <div className="flex justify-between gap-2">
+                                <span className="text-sm font-medium text-gray-900">{opt.name}</span>
+                                <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">
+                                  ${opt.price.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              </div>
+                              {opt.branches && opt.branches.length > 0 && (
+                                <details className="mt-1.5">
+                                  <summary className="text-xs text-blue-600 cursor-pointer">Ver sucursales ({opt.branches.length})</summary>
+                                  <ul className="text-xs text-gray-600 mt-1 space-y-0.5 pl-2">
+                                    {opt.branches.slice(0, 10).map((b, i) => (
+                                      <li key={i} className="capitalize">• {b}</li>
+                                    ))}
+                                  </ul>
+                                </details>
+                              )}
+                            </div>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Province + city (only for domicilio/sucursal with selected option) */}
+              {selectedShipping && deliveryMode !== "presencial" && (
                 <div className="space-y-3 border border-gray-200 rounded-xl p-4">
                   <h3 className="font-semibold text-gray-900">
                     {deliveryMode === "domicilio" ? "Dirección de entrega" : "Localidad de la sucursal"}
@@ -931,10 +992,12 @@ export default function HomePage() {
                 </div>
               )}
 
-              {/* Datos del destinatario */}
-              {selectedShipping && (
+              {/* Datos del destinatario (siempre que se haya elegido un modo válido) */}
+              {(selectedShipping || deliveryMode === "presencial") && (
                 <div className="space-y-3 border border-gray-200 rounded-xl p-4">
-                  <h3 className="font-semibold text-gray-900">Datos del destinatario</h3>
+                  <h3 className="font-semibold text-gray-900">
+                    {deliveryMode === "presencial" ? "Tus datos de contacto" : "Datos del destinatario"}
+                  </h3>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
@@ -991,13 +1054,15 @@ export default function HomePage() {
                   type="submit"
                   disabled={
                     loading ||
-                    !selectedShipping ||
-                    !shipZipcode ||
-                    !shipProvince ||
-                    !shipCity ||
-                    (deliveryMode === "domicilio" && (!shipAddress || !shipNumber)) ||
                     !shipRecipientName ||
-                    !shipPhone
+                    !shipPhone ||
+                    (deliveryMode !== "presencial" && (
+                      !selectedShipping ||
+                      !shipZipcode ||
+                      !shipProvince ||
+                      !shipCity ||
+                      (deliveryMode === "domicilio" && (!shipAddress || !shipNumber))
+                    ))
                   }
                   className="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >

@@ -314,18 +314,24 @@ export default function AdminDashboard({
                   </p>
                 </div>
 
-                {selectedClaim.type === "cambio" && selectedClaim.shippingZipcode && (
+                {selectedClaim.type === "cambio" && (selectedClaim.shippingZipcode || selectedClaim.shippingMode) && (
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-1">
-                      {selectedClaim.shippingMode === "sucursal" ? "Retiro en sucursal (cambio):" : "Dirección de envío (cambio):"}
+                      {selectedClaim.shippingMode === "presencial"
+                        ? "Retiro presencial en depósito:"
+                        : selectedClaim.shippingMode === "sucursal"
+                          ? "Retiro en sucursal (cambio):"
+                          : "Dirección de envío (cambio):"}
                     </p>
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-1 text-sm">
+                    <div className={`${selectedClaim.shippingMode === "presencial" ? "bg-green-50 border-green-200" : "bg-blue-50 border-blue-200"} border rounded-lg p-3 space-y-1 text-sm`}>
                       {selectedClaim.shippingMethodName && (
                         <div className="flex justify-between pb-1 mb-1 border-b border-blue-200">
                           <span className="font-medium text-gray-900">{selectedClaim.shippingMethodName}</span>
                           {selectedClaim.shippingCost != null && (
                             <span className="font-semibold text-gray-900">
-                              ${selectedClaim.shippingCost.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {selectedClaim.shippingCost === 0
+                                ? "Gratis"
+                                : `$${selectedClaim.shippingCost.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                             </span>
                           )}
                         </div>
@@ -333,18 +339,24 @@ export default function AdminDashboard({
                       <p className="font-medium text-gray-900">
                         {selectedClaim.shippingRecipientName}{selectedClaim.shippingRecipientLastName ? ` ${selectedClaim.shippingRecipientLastName}` : ""}
                       </p>
-                      {selectedClaim.shippingMode !== "sucursal" && selectedClaim.shippingAddress && (
-                        <p className="text-gray-900">
-                          {selectedClaim.shippingAddress} {selectedClaim.shippingNumber}
-                          {selectedClaim.shippingFloor ? ` - ${selectedClaim.shippingFloor}` : ""}
-                        </p>
+                      {selectedClaim.shippingMode === "presencial" ? (
+                        <p className="text-gray-700">Coordinar retiro en <strong>La Espuela 2757, Ituzaingó</strong> (hasta 19hs).</p>
+                      ) : (
+                        <>
+                          {selectedClaim.shippingMode !== "sucursal" && selectedClaim.shippingAddress && (
+                            <p className="text-gray-900">
+                              {selectedClaim.shippingAddress} {selectedClaim.shippingNumber}
+                              {selectedClaim.shippingFloor ? ` - ${selectedClaim.shippingFloor}` : ""}
+                            </p>
+                          )}
+                          {selectedClaim.shippingMode !== "sucursal" && selectedClaim.shippingNeighborhood && (
+                            <p className="text-gray-700">Barrio: {selectedClaim.shippingNeighborhood}</p>
+                          )}
+                          <p className="text-gray-700">
+                            {selectedClaim.shippingCity}, {selectedClaim.shippingProvince} - CP {selectedClaim.shippingZipcode}
+                          </p>
+                        </>
                       )}
-                      {selectedClaim.shippingMode !== "sucursal" && selectedClaim.shippingNeighborhood && (
-                        <p className="text-gray-700">Barrio: {selectedClaim.shippingNeighborhood}</p>
-                      )}
-                      <p className="text-gray-700">
-                        {selectedClaim.shippingCity}, {selectedClaim.shippingProvince} - CP {selectedClaim.shippingZipcode}
-                      </p>
                       {selectedClaim.shippingPhone && (
                         <p className="text-gray-700">Tel: {selectedClaim.shippingPhone}</p>
                       )}
@@ -378,7 +390,7 @@ export default function AdminDashboard({
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2">
-                  {selectedClaim.type === "cambio" && selectedClaim.shippingZipcode && (
+                  {selectedClaim.type === "cambio" && selectedClaim.shippingZipcode && selectedClaim.shippingMode !== "presencial" && (
                     <button
                       onClick={() => copyShippingData(selectedClaim)}
                       className="w-full bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition flex items-center justify-center gap-2"
