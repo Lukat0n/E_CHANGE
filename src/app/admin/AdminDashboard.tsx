@@ -59,6 +59,8 @@ export default function AdminDashboard({
   const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
   const [adminNotes, setAdminNotes] = useState("");
   const [updating, setUpdating] = useState(false);
+  const [editingPhone, setEditingPhone] = useState<{ customer: string; shipping: string } | null>(null);
+  const [savingPhone, setSavingPhone] = useState(false);
   const router = useRouter();
 
   const filteredClaims = claims.filter((c) => {
@@ -104,6 +106,26 @@ export default function AdminDashboard({
     ].filter(Boolean).join("\n");
     navigator.clipboard.writeText(lines);
     alert("Datos de envío copiados al portapapeles");
+  }
+
+  async function savePhone(id: string) {
+    if (!editingPhone) return;
+    setSavingPhone(true);
+    const res = await fetch(`/api/claims/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        customerPhone: editingPhone.customer,
+        shippingPhone: editingPhone.shipping,
+      }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setClaims(claims.map((c) => (c.id === id ? { ...c, ...updated } : c)));
+      if (selectedClaim?.id === id) setSelectedClaim({ ...selectedClaim, ...updated });
+      setEditingPhone(null);
+    }
+    setSavingPhone(false);
   }
 
   async function deleteClaim(id: string) {
@@ -370,12 +392,79 @@ export default function AdminDashboard({
                   </div>
                 )}
 
-                <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm">
+                <div className="bg-gray-50 rounded-lg p-3 space-y-2 text-sm">
                   <p><span className="font-medium text-gray-700">Cliente:</span> <span className="text-gray-900">{selectedClaim.customerName}</span></p>
                   <p><span className="font-medium text-gray-700">Email:</span> <span className="text-gray-900">{selectedClaim.customerEmail}</span></p>
-                  {selectedClaim.customerPhone && (
-                    <p><span className="font-medium text-gray-700">Teléfono:</span> <span className="text-gray-900">{selectedClaim.customerPhone}</span></p>
+
+                  {/* Teléfonos editables */}
+                  {!editingPhone ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p>
+                          <span className="font-medium text-gray-700">Teléfono cliente:</span>{" "}
+                          <span className="text-gray-900">{selectedClaim.customerPhone || <span className="italic text-gray-400">sin teléfono</span>}</span>
+                        </p>
+                        <button
+                          onClick={() => setEditingPhone({
+                            customer: selectedClaim.customerPhone || "",
+                            shipping: selectedClaim.shippingPhone || "",
+                          })}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          Editar
+                        </button>
+                      </div>
+                      {selectedClaim.shippingPhone && selectedClaim.shippingPhone !== selectedClaim.customerPhone && (
+                        <p>
+                          <span className="font-medium text-gray-700">Teléfono envío:</span>{" "}
+                          <span className="text-gray-900">{selectedClaim.shippingPhone}</span>
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-500">
+                        WhatsApp se manda a: <span className="font-mono">{selectedClaim.shippingPhone || selectedClaim.customerPhone || "—"}</span>
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 bg-white border border-gray-200 rounded p-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">Teléfono cliente</label>
+                        <input
+                          type="tel"
+                          value={editingPhone.customer}
+                          onChange={(e) => setEditingPhone({ ...editingPhone, customer: e.target.value })}
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"
+                          placeholder="Ej: 1155667788"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">Teléfono envío</label>
+                        <input
+                          type="tel"
+                          value={editingPhone.shipping}
+                          onChange={(e) => setEditingPhone({ ...editingPhone, shipping: e.target.value })}
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900"
+                          placeholder="Si es distinto al del cliente"
+                        />
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={() => setEditingPhone(null)}
+                          disabled={savingPhone}
+                          className="flex-1 border border-gray-300 text-gray-700 py-1 rounded text-xs font-medium hover:bg-gray-50 transition"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => savePhone(selectedClaim.id)}
+                          disabled={savingPhone}
+                          className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-medium hover:bg-blue-700 transition disabled:opacity-50"
+                        >
+                          {savingPhone ? "Guardando..." : "Guardar"}
+                        </button>
+                      </div>
+                    </div>
                   )}
+
                   <p><span className="font-medium text-gray-700">Fecha:</span> <span className="text-gray-900">{new Date(selectedClaim.createdAt).toLocaleDateString("es-AR", {
                     day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
                   })}</span></p>

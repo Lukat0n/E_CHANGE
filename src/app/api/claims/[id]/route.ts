@@ -17,7 +17,7 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { status, adminNotes, skipWhatsapp } = body;
+  const { status, adminNotes, skipWhatsapp, customerPhone, shippingPhone } = body;
 
   const validStatuses = ["pendiente", "aprobado", "rechazado"];
   if (status && !validStatuses.includes(status)) {
@@ -36,6 +36,8 @@ export async function PATCH(
   const data: Record<string, unknown> = {};
   if (status) data.status = status;
   if (adminNotes !== undefined) data.adminNotes = adminNotes;
+  if (customerPhone !== undefined) data.customerPhone = customerPhone || null;
+  if (shippingPhone !== undefined) data.shippingPhone = shippingPhone || null;
 
   let claim = await prisma.claim.update({ where: { id }, data });
 
