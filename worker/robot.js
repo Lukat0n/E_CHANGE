@@ -138,6 +138,23 @@ async function loginToTiendanube(page) {
     await page.waitForTimeout(2500);
   }
 
+  // Tiendanube hace una cadena de redirects después del login que termina poniendo
+  // cookies en el subdominio de la tienda (gelica.mitiendanube.com). Si nos
+  // quedamos en /auth/token o /auth/* esperamos a que termine la cadena.
+  let waits = 0;
+  while ((page.url().includes("/auth/token") || page.url().includes("/auth/new-admin")) && waits < 15) {
+    await page.waitForTimeout(1500);
+    waits++;
+  }
+
+  // Forzamos una navegación al admin del subdominio de la tienda para asegurar
+  // que las cookies cross-subdomain queden establecidas.
+  await page.goto("https://gelica.mitiendanube.com/admin", {
+    waitUntil: "domcontentloaded",
+    timeout: 30000,
+  }).catch(() => {});
+  await page.waitForTimeout(3000);
+
   if (page.url().includes("/login") || page.url().includes("/auth/otp")) {
     throw new Error(`Login no avanzó. URL final: ${page.url()}`);
   }
