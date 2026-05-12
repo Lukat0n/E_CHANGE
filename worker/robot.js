@@ -2,7 +2,7 @@ import { chromium } from "playwright";
 
 /**
  * Lanza un browser, loguea al admin de Tiendanube con las credenciales del .env
- * y devuelve la URL a la que cayó después del login (debería ser el dashboard).
+ * y devuelve la URL a la que cayó después del login.
  *
  * Esta es FASE 1: probar que las credenciales y el flujo de login funcionan
  * desde el contenedor de Railway antes de meternos con scraping del panel de envíos.
@@ -19,55 +19,76 @@ export async function testLogin() {
     const context = await browser.newContext({
       userAgent:
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      viewport: { width: 1280, height: 800 },
     });
     const page = await context.newPage();
 
-    await page.goto("https://www.tiendanube.com/login", { waitUntil: "domcontentloaded", timeout: 30000 });
+    // Tiendanube tiene varios puntos de login; vamos al universal
+    await page.goto("https://www.tiendanube.com/login", {
+      waitUntil: "networkidle",
+      timeout: 30000,
+    });
 
-    // Tiendanube login: typically input[name="user"] y input[name="password"]
-    // Probamos varios selectores comunes para tolerar variaciones.
-    const emailSel = ['input[name="user"]', 'input[name="email"]', 'input[type="email"]'];
-    const passSel = ['input[name="password"]', 'input[type="password"]'];
+    // Dejar que cualquier banner/modal aparezca
+    await page.waitForTimeout(1500);
 
-    let filled = false;
-    for (const sel of emailSel) {
-      const el = await page.$(sel);
-      if (el) {
-        await el.fill(user);
-        filled = true;
+    // Cerrar cookie banner si aparece (no bloqueante)
+    const cookieBtns = [
+      'button:has-text("Aceptar")',
+      'button:has-text("Acepto")',
+      'button:has-text("OK")',
+      '[id*="cookie"] button',
+    ];
+    for (const sel of cookieBtns) {
+      const btn = page.locator(sel).first();
+      if (await btn.isVisible().catch(() => false)) {
+        await btn.click().catch(() => {});
+        await page.waitForTimeout(500);
         break;
       }
     }
-    if (!filled) throw new Error("No se encontró el campo de email en el login");
 
-    let filledPass = false;
-    for (const sel of passSel) {
-      const el = await page.$(sel);
-      if (el) {
-        await el.fill(pass);
-        filledPass = true;
-        break;
-      }
+    // Buscar el primer input visible que parezca email/usuario
+    const emailLocator = page
+      .locator('input[type="email"], input[name="email"], input[name="user"], input[name="username"], input[id*="email" i], input[id*="user" i]')
+      .filter({ visible: true })
+      .first();
+
+    try {
+      await emailLocator.waitFor({ state: "visible", timeout: 15000 });
+    } catch {
+      return debugDump(page, "No apareció un input de email visible");
     }
-    if (!filledPass) throw new Error("No se encontró el campo de password en el login");
 
-    // Submit
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => {}),
-      page.click('button[type="submit"]'),
-    ]);
+    await emailLocator.fill(user);
 
-    // Esperar un poco para que aparezca el dashboard
+    const passLocator = page.locator('input[type="password"]').filter({ visible: true }).first();
+    await passLocator.waitFor({ state: "visible", timeout: 10000 });
+    await passLocator.fill(pass);
+
+    // Botón submit — probamos el más obvio primero
+    const submitLocator = page
+      .locator('button[type="submit"], button:has-text("Ingresar"), button:has-text("Iniciar"), input[type="submit"]')
+      .filter({ visible: true })
+      .first();
+
+    // Navegamos después de submit. Algunas implementaciones hacen SPA y no disparan navegación.
+    const navPromise = page.waitForURL(/.+/, { timeout: 30000 }).catch(() => null);
+    await submitLocator.click();
+    await navPromise;
     await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
 
     const finalUrl = page.url();
     const title = await page.title();
-
-    // Si la URL final sigue conteniendo /login, algo salió mal (credenciales o captcha)
     const looksLoggedIn = !finalUrl.includes("/login");
 
+    if (!looksLoggedIn) {
+      // Login falló — devolvemos info para debug
+      return debugDump(page, "Login no avanzó (sigue en /login). Probablemente credenciales o captcha.");
+    }
+
     return {
-      loggedIn: looksLoggedIn,
+      loggedIn: true,
       url: finalUrl,
       title,
     };
@@ -77,9 +98,35 @@ export async function testLogin() {
 }
 
 /**
- * FASE 3+: stub para crear un envío. Por ahora solo devuelve los datos recibidos
- * (dry run total). Cuando avancemos, acá va la navegación al panel de envíos +
- * llenado del formulario.
+ * Devuelve info de debug del estado actual de la página. Útil cuando el robot
+ * no encuentra los elementos esperados y necesitamos ver qué está pasando.
+ */
+async function debugDump(page, message) {
+  const url = page.url();
+  const title = await page.title().catch(() => "");
+  const screenshot = await page.screenshot({ type: "jpeg", quality: 60, fullPage: false }).catch(() => null);
+  const visibleInputs = await page.$$eval("input", (els) =>
+    els.map((el) => ({
+      name: el.getAttribute("name"),
+      id: el.id,
+      type: el.type,
+      visible: el.offsetParent !== null,
+      placeholder: el.placeholder,
+    }))
+  ).catch(() => []);
+
+  return {
+    loggedIn: false,
+    error: message,
+    url,
+    title,
+    visibleInputs,
+    screenshot: screenshot ? screenshot.toString("base64") : null,
+  };
+}
+
+/**
+ * FASE 3+: stub para crear un envío.
  */
 export async function createShipment(input) {
   return {
