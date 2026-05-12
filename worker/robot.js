@@ -1,4 +1,10 @@
-import { chromium } from "playwright";
+import { chromium as chromiumExtra } from "playwright-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
+
+// Disfraz contra detección de browser automatizado (oculta navigator.webdriver,
+// fingerprints de canvas, etc.). Tiendanube nos servía un HTML vacío sin esto.
+chromiumExtra.use(StealthPlugin());
+const chromium = chromiumExtra;
 
 /**
  * Lanza un browser, loguea al admin de Tiendanube con las credenciales del .env
@@ -14,12 +20,24 @@ export async function testLogin() {
     throw new Error("Faltan env vars TIENDANUBE_USER y/o TIENDANUBE_PASS");
   }
 
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-features=IsolateOrigins,site-per-process",
+    ],
+  });
   try {
     const context = await browser.newContext({
       userAgent:
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      viewport: { width: 1280, height: 800 },
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      viewport: { width: 1366, height: 768 },
+      locale: "es-AR",
+      timezoneId: "America/Argentina/Buenos_Aires",
+      extraHTTPHeaders: {
+        "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
+      },
     });
     const page = await context.newPage();
 
