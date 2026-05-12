@@ -34,19 +34,29 @@ async function launchBrowser() {
 }
 
 /**
- * Loguea al admin de Tiendanube. Lanza error si falla. Devuelve la URL final
- * después del login (debería estar en el admin de la tienda).
+ * Loguea al admin de Tiendanube. Lanza error si falla. Devuelve la URL final.
+ *
+ * @param page - Playwright page
+ * @param targetUrl - URL del admin del store a la que querés llegar. Es importante
+ *   pasar esto para que la cadena de redirects post-login termine seteando las
+ *   cookies en el subdominio del store (gelica.mitiendanube.com). Si no se pasa,
+ *   queda autenticado solo en www.tiendanube.com.
  */
-async function loginToTiendanube(page) {
+async function loginToTiendanube(page, targetUrl = "https://gelica.mitiendanube.com/admin") {
   const user = process.env.TIENDANUBE_USER;
   const pass = process.env.TIENDANUBE_PASS;
   if (!user || !pass) throw new Error("Faltan TIENDANUBE_USER / TIENDANUBE_PASS");
 
-  await page.goto("https://www.tiendanube.com/login", {
-    waitUntil: "domcontentloaded",
-    timeout: 45000,
-  });
-  await page.waitForTimeout(4000); // hidratar SPA
+  // Navegamos al destino. Tiendanube nos va a redirigir a la pantalla de login
+  // con el parámetro login_to seteado, lo que asegura que después de loguear
+  // la cadena de redirects nos lleve de vuelta y setee cookies cross-subdomain.
+  await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+  await page.waitForTimeout(4000);
+
+  // Si ya estamos logueados (sesión reusada) y la URL no contiene /login, listo.
+  if (!page.url().includes("/login") && !page.url().includes("/auth/")) {
+    return page.url();
+  }
 
   // Cookie banner
   for (const sel of ['button:has-text("Aceptar")', 'button:has-text("Acepto")', '[id*="cookie"] button']) {
@@ -139,21 +149,16 @@ async function loginToTiendanube(page) {
   }
 
   // Tiendanube hace una cadena de redirects después del login que termina poniendo
-  // cookies en el subdominio de la tienda (gelica.mitiendanube.com). Si nos
-  // quedamos en /auth/token o /auth/* esperamos a que termine la cadena.
+  // cookies en el subdominio del store y nos lleva al targetUrl. Esperamos a que
+  // la URL deje los paths de auth.
   let waits = 0;
-  while ((page.url().includes("/auth/token") || page.url().includes("/auth/new-admin")) && waits < 15) {
+  while (
+    (page.url().includes("/auth/token") || page.url().includes("/auth/new-admin") || page.url().includes("/login")) &&
+    waits < 20
+  ) {
     await page.waitForTimeout(1500);
     waits++;
   }
-
-  // Forzamos una navegación al admin del subdominio de la tienda para asegurar
-  // que las cookies cross-subdomain queden establecidas.
-  await page.goto("https://gelica.mitiendanube.com/admin", {
-    waitUntil: "domcontentloaded",
-    timeout: 30000,
-  }).catch(() => {});
-  await page.waitForTimeout(3000);
 
   if (page.url().includes("/login") || page.url().includes("/auth/otp")) {
     throw new Error(`Login no avanzó. URL final: ${page.url()}`);
@@ -189,8 +194,12 @@ export async function inspectUrl(url) {
   if (!url) throw new Error("Falta el parámetro 'url'");
   const { browser, page } = await launchBrowser();
   try {
-    await loginToTiendanube(page);
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+    // Pasamos url como targetUrl para que el login redirija ahí automáticamente
+    await loginToTiendanube(page, url);
+    // Por si la cadena de redirects nos dejó en /admin y no en url exacta:
+    if (!page.url().startsWith(url.split("#")[0])) {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+    }
     await page.waitForTimeout(5000); // dar tiempo al SPA a renderizar
     return await debugDump(page, "Inspección exitosa");
   } finally {
@@ -230,9 +239,10 @@ export async function createShipment(input) {
 
   const { browser, page } = await launchBrowser();
   try {
-    await loginToTiendanube(page);
-
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await loginToTiendanube(page, url);
+    if (!page.url().startsWith(url.split("#")[0])) {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+    }
     await page.waitForTimeout(6000); // SPA tarda en renderizar el form
 
     if (mode === "domicilio") {
