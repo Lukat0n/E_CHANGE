@@ -63,6 +63,8 @@ export default function AdminDashboard({
   const [savingPhone, setSavingPhone] = useState(false);
   const [testingRobot, setTestingRobot] = useState(false);
   const [robotResult, setRobotResult] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [robotDebug, setRobotDebug] = useState<any | null>(null);
   const router = useRouter();
 
   const filteredClaims = claims.filter((c) => {
@@ -113,6 +115,7 @@ export default function AdminDashboard({
   async function testRobotLogin() {
     setTestingRobot(true);
     setRobotResult(null);
+    setRobotDebug(null);
     try {
       const res = await fetch("/api/worker/test-login", { method: "POST" });
       const data = await res.json();
@@ -120,6 +123,10 @@ export default function AdminDashboard({
         setRobotResult(`✅ Login OK — URL final: ${data.url}`);
       } else {
         setRobotResult(`⚠️ ${data.error || `Login falló (url: ${data.url || "?"})`}`);
+        // Si hay info de debug (inputs / screenshot) la guardamos para mostrar
+        if (data.url || data.visibleInputs || data.screenshot) {
+          setRobotDebug(data);
+        }
       }
     } catch (err) {
       setRobotResult(`❌ ${err instanceof Error ? err.message : "Error"}`);
@@ -253,21 +260,58 @@ export default function AdminDashboard({
         </div>
 
         {/* Robot panel (Fase 1) */}
-        <div className="bg-white rounded-xl p-4 shadow-sm border mb-4 flex flex-wrap items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-gray-900">Robot Envío Nube</p>
-            <p className="text-xs text-gray-500">
-              Probá que el worker pueda loguear al admin de Tiendanube.
-              {robotResult && <span className="ml-2 font-medium">{robotResult}</span>}
-            </p>
+        <div className="bg-white rounded-xl p-4 shadow-sm border mb-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900">Robot Envío Nube</p>
+              <p className="text-xs text-gray-500">
+                Probá que el worker pueda loguear al admin de Tiendanube.
+                {robotResult && <span className="ml-2 font-medium">{robotResult}</span>}
+              </p>
+            </div>
+            <button
+              onClick={testRobotLogin}
+              disabled={testingRobot}
+              className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50"
+            >
+              {testingRobot ? "Probando..." : "Probar login del robot"}
+            </button>
           </div>
-          <button
-            onClick={testRobotLogin}
-            disabled={testingRobot}
-            className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50"
-          >
-            {testingRobot ? "Probando..." : "Probar login del robot"}
-          </button>
+
+          {robotDebug && (
+            <details className="mt-3" open>
+              <summary className="text-xs font-medium text-gray-700 cursor-pointer">Ver debug del robot</summary>
+              <div className="mt-2 space-y-2 text-xs">
+                {robotDebug.url && (
+                  <div className="bg-gray-50 rounded p-2 break-all">
+                    <span className="font-medium">URL final:</span> {robotDebug.url}
+                  </div>
+                )}
+                {robotDebug.title && (
+                  <div className="bg-gray-50 rounded p-2">
+                    <span className="font-medium">Título:</span> {robotDebug.title}
+                  </div>
+                )}
+                {robotDebug.visibleInputs && robotDebug.visibleInputs.length > 0 && (
+                  <div className="bg-gray-50 rounded p-2">
+                    <span className="font-medium block mb-1">Inputs en la página ({robotDebug.visibleInputs.length}):</span>
+                    <pre className="text-[10px] overflow-x-auto">{JSON.stringify(robotDebug.visibleInputs, null, 2)}</pre>
+                  </div>
+                )}
+                {robotDebug.screenshot && (
+                  <div>
+                    <p className="font-medium mb-1">Screenshot:</p>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`data:image/jpeg;base64,${robotDebug.screenshot}`}
+                      alt="screenshot"
+                      className="border rounded max-w-full"
+                    />
+                  </div>
+                )}
+              </div>
+            </details>
+          )}
         </div>
 
         {/* Filters */}
