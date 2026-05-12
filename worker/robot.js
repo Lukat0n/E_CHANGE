@@ -1,5 +1,6 @@
 import { chromium as chromiumExtra } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import { getLatestTiendanubeOtp } from "./gmail.js";
 
 // Disfraz contra detección de browser automatizado (oculta navigator.webdriver,
 // fingerprints de canvas, etc.). Tiendanube nos servía un HTML vacío sin esto.
@@ -119,15 +120,68 @@ export async function testLogin() {
     await navPromise;
     // Esperar el DOM cargado, no networkidle (Tiendanube nunca llega a idle por analytics)
     await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(2000); // dar tiempo a redirects post-login
+    await page.waitForTimeout(3000); // dar tiempo a redirects post-login
+
+    // Si caímos en /auth/otp, Tiendanube nos pide código de verificación por email
+    if (page.url().includes("/auth/otp")) {
+      console.log("[testLogin] /auth/otp detectado, buscando código en Gmail...");
+
+      // Esperar a que el email llegue (puede tardar 5-30s). Intentamos cada 3s hasta 8 veces.
+      let otpCode = null;
+      for (let i = 0; i < 10; i++) {
+        await page.waitForTimeout(3000);
+        try {
+          otpCode = await getLatestTiendanubeOtp();
+          if (otpCode) {
+            console.log(`[testLogin] OTP encontrado (intento ${i + 1})`);
+            break;
+          }
+        } catch (e) {
+          console.log(`[testLogin] intento ${i + 1} de leer Gmail falló:`, e?.message);
+        }
+      }
+
+      if (!otpCode) {
+        const dump = await debugDump(page, "No pude leer el OTP de Gmail después de 30s");
+        return dump;
+      }
+
+      // Llenar el código. Puede ser 1 input de 6 dígitos o 6 inputs de 1 dígito cada uno.
+      const otpInputs = await page
+        .locator('input[type="text"], input[inputmode="numeric"], input[type="number"], input[type="tel"]')
+        .filter({ visible: true })
+        .all();
+
+      if (otpInputs.length === 6) {
+        for (let i = 0; i < 6; i++) {
+          await otpInputs[i].fill(otpCode[i]);
+        }
+      } else if (otpInputs.length >= 1) {
+        await otpInputs[0].fill(otpCode);
+      } else {
+        const dump = await debugDump(page, `Llegué al OTP con código ${otpCode} pero no encontré inputs para tipearlo`);
+        return dump;
+      }
+
+      // Submit del OTP
+      const otpSubmit = page
+        .locator('button[type="submit"], button:has-text("Verificar"), button:has-text("Continuar"), button:has-text("Confirmar"), button:has-text("Enviar")')
+        .filter({ visible: true })
+        .first();
+
+      const otpNavPromise = page.waitForURL(/.+/, { timeout: 30000 }).catch(() => null);
+      await otpSubmit.click().catch(() => {});
+      await otpNavPromise;
+      await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(2500);
+    }
 
     const finalUrl = page.url();
     const title = await page.title();
-    const looksLoggedIn = !finalUrl.includes("/login");
+    const looksLoggedIn = !finalUrl.includes("/login") && !finalUrl.includes("/auth/otp");
 
     if (!looksLoggedIn) {
-      // Login falló — devolvemos info para debug
-      const dump = await debugDump(page, "Login no avanzó (sigue en /login). Probablemente credenciales o captcha.");
+      const dump = await debugDump(page, "Login no avanzó (sigue en /login o /auth/otp). Probablemente OTP incorrecto.");
       return dump;
     }
 

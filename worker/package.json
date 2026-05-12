@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "express": "^4.21.2",
+    "imapflow": "^1.0.183",
+    "mailparser": "^3.7.5",
     "playwright": "1.60.0",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"
