@@ -146,8 +146,15 @@ export default function AdminDashboard({
         body: JSON.stringify({ url: inspectUrl }),
       });
       const data = await res.json();
-      setRobotResult(`📄 Inspección — URL: ${data.url || inspectUrl}`);
-      setRobotDebug(data);
+      if (!res.ok || data.ok === false) {
+        setRobotResult(`❌ ${data.error || `HTTP ${res.status}`}`);
+        if (data.url || data.visibleInputs || data.screenshot) {
+          setRobotDebug(data);
+        }
+      } else {
+        setRobotResult(`📄 Inspección OK — URL final: ${data.url || inspectUrl}`);
+        setRobotDebug(data);
+      }
     } catch (err) {
       setRobotResult(`❌ ${err instanceof Error ? err.message : "Error"}`);
     } finally {

@@ -64,19 +64,32 @@ async function loginToTiendanube(page) {
     .first();
   await emailButton.waitFor({ state: "visible", timeout: 10000 });
   await emailButton.click();
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(3000); // animación + render del form
 
-  // Email + password
-  const emailInput = page.locator('input[name="user-mail"], input[type="email"]').filter({ visible: true }).first();
-  await emailInput.waitFor({ state: "visible", timeout: 10000 });
+  // Scope todo dentro de #login-form para no agarrar elementos de la otra
+  // form (la del picker-remove-form, que también tiene un button[type=submit] hidden)
+  const loginForm = page.locator("#login-form");
+
+  const emailInput = loginForm
+    .locator('input[name="user-mail"], input[type="email"]')
+    .filter({ visible: true })
+    .first();
+  await emailInput.waitFor({ state: "visible", timeout: 15000 });
   await emailInput.fill(user);
 
-  const passInput = page.locator('input[name="pass"], input[type="password"]').filter({ visible: true }).first();
+  const passInput = loginForm
+    .locator('input[name="pass"], input[type="password"]')
+    .filter({ visible: true })
+    .first();
   await passInput.waitFor({ state: "visible", timeout: 10000 });
   await passInput.fill(pass);
 
-  // Submit
-  const submit = page.locator('button[type="submit"]').filter({ visible: true }).first();
+  // Submit dentro del login-form (no del picker hidden)
+  const submit = loginForm
+    .locator('button[type="submit"], button:has-text("Iniciar"), button:has-text("Ingresar")')
+    .filter({ visible: true })
+    .first();
+  await submit.waitFor({ state: "visible", timeout: 10000 });
   const nav = page.waitForURL(/.+/, { timeout: 30000 }).catch(() => null);
   await submit.click();
   await nav;
