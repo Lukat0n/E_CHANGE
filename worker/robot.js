@@ -58,6 +58,13 @@ async function loginToTiendanube(page, targetUrl = "https://gelica.mitiendanube.
     return page.url();
   }
 
+  // Capturamos el login_to de la URL actual. Esto es la cadena que después del
+  // login tenemos que visitar para que se seteen las cookies en el subdominio
+  // de la tienda.
+  const loginToMatch = page.url().match(/[?&]login_to=([^&]+)/);
+  const loginToUrl = loginToMatch ? decodeURIComponent(loginToMatch[1]) : null;
+  console.log("[login] login_to capturado:", loginToUrl || "(ninguno)");
+
   // Cookie banner
   for (const sel of ['button:has-text("Aceptar")', 'button:has-text("Acepto")', '[id*="cookie"] button']) {
     const btn = page.locator(sel).first();
@@ -148,16 +155,26 @@ async function loginToTiendanube(page, targetUrl = "https://gelica.mitiendanube.
     await page.waitForTimeout(2500);
   }
 
-  // Tiendanube hace una cadena de redirects después del login que termina poniendo
-  // cookies en el subdominio del store y nos lleva al targetUrl. Esperamos a que
-  // la URL deje los paths de auth.
+  // Esperamos hasta 30s a que la cadena natural de redirects nos lleve al subdominio.
   let waits = 0;
   while (
-    (page.url().includes("/auth/token") || page.url().includes("/auth/new-admin") || page.url().includes("/login")) &&
+    !page.url().includes("gelica.mitiendanube.com") &&
+    !page.url().includes("/dashboard") &&
+    (page.url().includes("tiendanube.com")) &&
     waits < 20
   ) {
     await page.waitForTimeout(1500);
     waits++;
+  }
+
+  // Si seguimos en www.tiendanube.com (o /auth/token quedó atascado),
+  // visitamos manualmente el login_to capturado para forzar la cadena.
+  if (loginToUrl && !page.url().includes("gelica.mitiendanube.com")) {
+    console.log("[login] forzando navegación a login_to:", loginToUrl);
+    await page.goto(loginToUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) =>
+      console.log("[login] goto login_to falló:", e?.message)
+    );
+    await page.waitForTimeout(4000);
   }
 
   if (page.url().includes("/login") || page.url().includes("/auth/otp")) {
