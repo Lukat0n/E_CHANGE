@@ -119,6 +119,7 @@ export default function AdminDashboard({
       case "reclamo": return "Reclamo";
       case "cambio": return "Cambio";
       case "no_recibido": return "No recibido";
+      case "reenvio": return "Reenvío";
       default: return type;
     }
   }
@@ -128,6 +129,7 @@ export default function AdminDashboard({
       case "reclamo": return "bg-red-100 text-red-700";
       case "cambio": return "bg-yellow-100 text-yellow-700";
       case "no_recibido": return "bg-purple-100 text-purple-700";
+      case "reenvio": return "bg-blue-100 text-blue-700";
       default: return "bg-gray-100 text-gray-700";
     }
   }
@@ -206,6 +208,7 @@ export default function AdminDashboard({
               <option value="reclamo">Reclamo</option>
               <option value="cambio">Cambio</option>
               <option value="no_recibido">No recibido</option>
+              <option value="reenvio">Reenvío</option>
             </select>
           </div>
         </div>
@@ -314,14 +317,16 @@ export default function AdminDashboard({
                   </p>
                 </div>
 
-                {selectedClaim.type === "cambio" && (selectedClaim.shippingZipcode || selectedClaim.shippingMode) && (
+                {(selectedClaim.type === "cambio" || selectedClaim.type === "reenvio") && (selectedClaim.shippingZipcode || selectedClaim.shippingMode) && (
                   <div>
                     <p className="text-sm font-medium text-gray-700 mb-1">
-                      {selectedClaim.shippingMode === "presencial"
-                        ? "Retiro presencial en depósito:"
-                        : selectedClaim.shippingMode === "sucursal"
-                          ? "Retiro en sucursal (cambio):"
-                          : "Dirección de envío (cambio):"}
+                      {selectedClaim.type === "reenvio"
+                        ? "Datos del reenvío:"
+                        : selectedClaim.shippingMode === "presencial"
+                          ? "Retiro presencial en depósito:"
+                          : selectedClaim.shippingMode === "sucursal"
+                            ? "Retiro en sucursal (cambio):"
+                            : "Dirección de envío (cambio):"}
                     </p>
                     <div className={`${selectedClaim.shippingMode === "presencial" ? "bg-green-50 border-green-200" : "bg-blue-50 border-blue-200"} border rounded-lg p-3 space-y-1 text-sm`}>
                       {selectedClaim.shippingMethodName && (

@@ -51,10 +51,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const validTypes = ["reclamo", "cambio", "no_recibido"];
+  const validTypes = ["reclamo", "cambio", "no_recibido", "reenvio"];
   if (!validTypes.includes(type)) {
     return NextResponse.json(
-      { error: "Tipo inválido. Usar: reclamo, cambio, no_recibido" },
+      { error: "Tipo inválido. Usar: reclamo, cambio, no_recibido, reenvio" },
       { status: 400 }
     );
   }

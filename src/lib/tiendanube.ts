@@ -43,6 +43,10 @@ export function formatOrderInfo(order: Record<string, unknown>, storeDomain?: st
   const shippingTrackingUrl = order.shipping_tracking_url as string | null;
   const shippingCarrier = order.shipping_carrier_name as string | null;
   const shippingOption = order.shipping as string | null;
+  // Cost the merchant actually paid for shipping — used to price re-shipments
+  const shippingCostOwnerRaw = order.shipping_cost_owner as string | number | null;
+  const shippingCostOwner = shippingCostOwnerRaw != null ? Number(shippingCostOwnerRaw) : null;
+  const shippingOptionName = order.shipping_option as string | null;
   const paymentStatus = order.payment_status as string;
   const status = order.status as string;
   const createdAt = order.created_at as string;
@@ -80,6 +84,8 @@ export function formatOrderInfo(order: Record<string, unknown>, storeDomain?: st
     shippingStatus,
     shippingCarrier,
     shippingOption,
+    shippingOptionName,
+    shippingCostOwner,
     shippingTracking,
     shippingTrackingUrl,
     trackingPageUrl,

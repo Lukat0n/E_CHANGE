@@ -2,7 +2,7 @@
 
 import { useState, useEffect, FormEvent } from "react";
 
-type ClaimType = "reclamo" | "cambio" | "no_recibido";
+type ClaimType = "reclamo" | "cambio" | "no_recibido" | "reenvio";
 
 interface OrderInfo {
   number: string | number;
@@ -12,6 +12,8 @@ interface OrderInfo {
   shippingStatus: string;
   shippingCarrier: string | null;
   shippingOption: string | null;
+  shippingOptionName: string | null;
+  shippingCostOwner: number | null;
   shippingTracking: string | null;
   shippingTrackingUrl: string | null;
   trackingPageUrl: string | null;
@@ -271,6 +273,18 @@ export default function HomePage() {
           customerName: orderInfo?.customer?.name || "",
           customerEmail: orderInfo?.customer?.email || customerEmail,
           customerPhone: orderInfo?.customer?.phone || "",
+          ...(claimType === "reenvio" && orderInfo && {
+            // Persist original shipping context so admin sees price + method at a glance
+            shippingZipcode: orderInfo.shippingAddress?.zipcode || "",
+            shippingProvince: orderInfo.shippingAddress?.province || "",
+            shippingCity: orderInfo.shippingAddress?.city || "",
+            shippingAddress: orderInfo.shippingAddress?.address || "",
+            shippingPhone: orderInfo.customer?.phone || "",
+            shippingMode: "domicilio",
+            shippingMethodCode: "reenvio",
+            shippingMethodName: orderInfo.shippingOption || orderInfo.shippingCarrier || "Reenvío",
+            shippingCost: orderInfo.shippingCostOwner ?? null,
+          }),
           ...(claimType === "cambio" && {
             // For presencial we don't collect CP/dirección
             shippingZipcode: deliveryMode === "presencial" ? "" : shipZipcode,
@@ -329,7 +343,11 @@ export default function HomePage() {
             </svg>
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            {claimType === "cambio" ? "Solicitud de cambio enviada" : "Reclamo enviado"}
+            {claimType === "cambio"
+              ? "Solicitud de cambio enviada"
+              : claimType === "reenvio"
+                ? "Solicitud de reenvío enviada"
+                : "Reclamo enviado"}
           </h2>
           <p className="text-gray-600 mb-6">
             Tu solicitud fue registrada exitosamente. Te contactaremos pronto.
@@ -518,11 +536,12 @@ export default function HomePage() {
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">¿Qué necesitás?</h2>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {([
                   { value: "reclamo" as const, label: "Reclamo", desc: "Producto con problema", icon: "!" },
                   { value: "cambio" as const, label: "Cambio", desc: "Quiero cambiar producto", icon: "↔" },
                   { value: "no_recibido" as const, label: "No recibido", desc: "No me llegó el pedido", icon: "?" },
+                  { value: "reenvio" as const, label: "Reenvío", desc: "Reenviar el pedido", icon: "⟳" },
                 ]).map((opt) => (
                   <button
                     key={opt.value}
@@ -663,6 +682,14 @@ export default function HomePage() {
                   >
                     Ver precio del cambio
                   </button>
+                ) : claimType === "reenvio" ? (
+                  <button
+                    type="button"
+                    onClick={() => setStep(3)}
+                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition"
+                  >
+                    Ver costo del reenvío
+                  </button>
                 ) : (
                   <button
                     type="button"
@@ -681,8 +708,8 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Step 3: Photo (reclamo/no_recibido) OR Payment (cambio) */}
-          {step === 3 && claimType !== "cambio" && (
+          {/* Step 3: Photo (reclamo/no_recibido) */}
+          {step === 3 && (claimType === "reclamo" || claimType === "no_recibido") && (
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Foto del producto</h2>
 
@@ -714,7 +741,7 @@ export default function HomePage() {
                 <div className="text-sm text-gray-600 space-y-1">
                   <p><span className="font-medium">Orden:</span> #{orderNumber}</p>
                   <p><span className="font-medium">Nombre:</span> {orderInfo?.customer?.name || "-"}</p>
-                  <p><span className="font-medium">Tipo:</span> {claimType === "reclamo" ? "Reclamo" : "No recibido"}</p>
+                  <p><span className="font-medium">Tipo:</span> {claimType === "reclamo" ? "Reclamo" : claimType === "no_recibido" ? "No recibido" : "Reenvío"}</p>
                 </div>
               </div>
 
@@ -1076,6 +1103,66 @@ export default function HomePage() {
                   className="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {loading ? "Enviando..." : "Solicitar cambio"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Reenvío - precio + razón + submit */}
+          {step === 3 && claimType === "reenvio" && (
+            <div className="space-y-5">
+              <h2 className="text-xl font-semibold text-gray-900">Reenvío del pedido</h2>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+                <div className="flex justify-between text-sm text-gray-700">
+                  <span>Envío original:</span>
+                  <span className="font-medium text-gray-900 text-right">{orderInfo?.shippingOption || orderInfo?.shippingCarrier || "-"}</span>
+                </div>
+                <div className="border-t border-blue-200 pt-2 flex justify-between">
+                  <span className="font-semibold text-gray-900">Costo del reenvío</span>
+                  <span className="text-2xl font-bold text-gray-900">
+                    {orderInfo?.shippingCostOwner != null
+                      ? `$${orderInfo.shippingCostOwner.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : "A coordinar"}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Es el mismo costo del envío original. Te vamos a contactar para coordinar el pago y el reenvío a la misma dirección de la orden.
+                </p>
+              </div>
+
+              {orderInfo?.shippingAddress && (
+                <div className="border border-gray-200 rounded-xl p-4 space-y-1 text-sm">
+                  <p className="font-semibold text-gray-900">Se reenvía a:</p>
+                  <p className="text-gray-700">
+                    {orderInfo.shippingAddress.address}, {orderInfo.shippingAddress.city}, {orderInfo.shippingAddress.province} - CP {orderInfo.shippingAddress.zipcode}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Si necesitás cambiar la dirección, indicalo abajo en el motivo.</p>
+                </div>
+              )}
+
+              <div className="border border-gray-200 rounded-xl p-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Motivo del reenvío *</label>
+                <textarea
+                  required
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none text-gray-900"
+                  placeholder="Ej: No estaba cuando llegó el envío, se pasó la fecha para retirarlo en sucursal, etc."
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setStep(2)} className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-50 transition">
+                  Atrás
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading || !description}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? "Enviando..." : "Solicitar reenvío"}
                 </button>
               </div>
             </div>
