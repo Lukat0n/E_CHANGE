@@ -117,7 +117,6 @@ export default function HomePage() {
   // Override "block no_recibido" if customer explicitly says it wasn't received
   // (e.g. shipping_status says delivered but customer never got it)
   const [overrideNotDelivered, setOverrideNotDelivered] = useState(false);
-  const [showOverrideConfirm, setShowOverrideConfirm] = useState(false);
   // Shipping method selection
   const [deliveryMode, setDeliveryMode] = useState<"domicilio" | "sucursal">("domicilio");
   const [domicilioOptions, setDomicilioOptions] = useState<ShippingOption[]>([]);
@@ -350,7 +349,6 @@ export default function HomePage() {
               setSelectedShippingCode("");
               setShippingError("");
               setOverrideNotDelivered(false);
-              setShowOverrideConfirm(false);
             }}
             className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
           >
@@ -576,7 +574,7 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-3 pl-7">
+                  <div className="flex flex-wrap items-center gap-3 pl-7">
                     {orderInfo?.trackingPageUrl && (
                       <a
                         href={orderInfo.trackingPageUrl}
@@ -590,57 +588,42 @@ export default function HomePage() {
                         Ver seguimiento
                       </a>
                     )}
-                    {(isDelivered || isShipped) && !showOverrideConfirm && (
+                    {(isDelivered || isShipped) && (
                       <button
                         type="button"
-                        onClick={() => setShowOverrideConfirm(true)}
-                        className={`text-sm font-medium underline ${isDelivered ? "text-green-700 hover:text-green-900" : "text-yellow-700 hover:text-yellow-900"}`}
+                        onClick={() => {
+                          setOverrideNotDelivered(true);
+                          // give the textarea a moment to render then focus it
+                          setTimeout(() => {
+                            const ta = document.getElementById("no-recibido-desc") as HTMLTextAreaElement | null;
+                            ta?.focus();
+                            ta?.scrollIntoView({ behavior: "smooth", block: "center" });
+                          }, 50);
+                        }}
+                        className={`text-sm font-medium px-3 py-1.5 rounded-lg border transition ${
+                          isDelivered
+                            ? "border-green-300 text-green-700 hover:bg-green-100"
+                            : "border-yellow-300 text-yellow-700 hover:bg-yellow-100"
+                        }`}
                       >
                         {isDelivered ? "¿No se entregó?" : "No me llegó - reclamar ahora"}
                       </button>
                     )}
                   </div>
-
-                  {showOverrideConfirm && (
-                    <div className="ml-7 mt-2 bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-                      <div>
-                        <p className="font-medium text-gray-900 text-sm">
-                          {isDelivered
-                            ? "¿Estás seguro de que no recibiste el pedido?"
-                            : "¿Confirmás que querés reclamar antes del plazo?"}
-                        </p>
-                        <p className="text-xs text-gray-600 mt-1">
-                          {isDelivered
-                            ? "Según el seguimiento del transportista, este pedido figura como entregado. Si lo notificás como no recibido vamos a abrir un caso para revisarlo."
-                            : "Tu pedido todavía está dentro del plazo de entrega. Si lo reclamás ahora, podemos pedirte que esperes hasta la fecha límite antes de resolverlo."}
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setShowOverrideConfirm(false)}
-                          className="flex-1 border border-gray-300 text-gray-700 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition"
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => { setOverrideNotDelivered(true); setShowOverrideConfirm(false); }}
-                          className="flex-1 bg-red-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition"
-                        >
-                          Sí, notificar
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
               {/* Description for reclamo and no_recibido (whenever the claim isn't blocked) */}
               {(claimType === "reclamo" || (claimType === "no_recibido" && !noRecibidoBlocked)) && (
-                <div>
+                <div className="space-y-2">
+                  {claimType === "no_recibido" && overrideNotDelivered && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
+                      Vas a notificar que <strong>no recibiste</strong> el pedido aunque el seguimiento dice otra cosa. Contanos lo que pasó y apretá <strong>Notificar y continuar</strong>.
+                    </div>
+                  )}
                   <label className="block text-sm font-medium text-gray-700 mb-1">Descripción *</label>
                   <textarea
+                    id="no-recibido-desc"
                     required
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
@@ -672,9 +655,13 @@ export default function HomePage() {
                     type="button"
                     onClick={() => { if (description && !noRecibidoBlocked) setStep(3); }}
                     disabled={noRecibidoBlocked || !description}
-                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    className={`flex-1 text-white py-3 rounded-lg font-medium transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                      claimType === "no_recibido" && overrideNotDelivered
+                        ? "bg-red-600 hover:bg-red-700"
+                        : "bg-blue-600 hover:bg-blue-700"
+                    }`}
                   >
-                    Continuar
+                    {claimType === "no_recibido" && overrideNotDelivered ? "Notificar y continuar" : "Continuar"}
                   </button>
                 )}
               </div>
