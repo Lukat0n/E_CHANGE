@@ -7,20 +7,13 @@ import { getLatestTiendanubeOtp } from "./gmail.js";
 chromiumExtra.use(StealthPlugin());
 const chromium = chromiumExtra;
 
-/**
- * Lanza un browser, loguea al admin de Tiendanube con las credenciales del .env
- * y devuelve la URL a la que cayó después del login.
- *
- * Esta es FASE 1: probar que las credenciales y el flujo de login funcionan
- * desde el contenedor de Railway antes de meternos con scraping del panel de envíos.
- */
-export async function testLogin() {
-  const user = process.env.TIENDANUBE_USER;
-  const pass = process.env.TIENDANUBE_PASS;
-  if (!user || !pass) {
-    throw new Error("Faltan env vars TIENDANUBE_USER y/o TIENDANUBE_PASS");
-  }
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+/**
+ * Lanza Chromium con la config "stealth" que necesitamos para Tiendanube.
+ * Devuelve { browser, context, page } — el caller hace browser.close() al final.
+ */
+async function launchBrowser() {
   const browser = await chromium.launch({
     headless: true,
     args: [
@@ -29,166 +22,221 @@ export async function testLogin() {
       "--disable-features=IsolateOrigins,site-per-process",
     ],
   });
-  try {
-    const context = await browser.newContext({
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      viewport: { width: 1366, height: 768 },
-      locale: "es-AR",
-      timezoneId: "America/Argentina/Buenos_Aires",
-      extraHTTPHeaders: {
-        "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
-      },
-    });
-    const page = await context.newPage();
+  const context = await browser.newContext({
+    userAgent: UA,
+    viewport: { width: 1366, height: 768 },
+    locale: "es-AR",
+    timezoneId: "America/Argentina/Buenos_Aires",
+    extraHTTPHeaders: { "Accept-Language": "es-AR,es;q=0.9,en;q=0.8" },
+  });
+  const page = await context.newPage();
+  return { browser, context, page };
+}
 
-    // Tiendanube tiene varios puntos de login; vamos al universal.
-    // Usamos "domcontentloaded" (no "networkidle") porque las páginas de Tiendanube
-    // cargan scripts de analytics constantemente y nunca llegan a estar idle.
-    await page.goto("https://www.tiendanube.com/login", {
-      waitUntil: "domcontentloaded",
-      timeout: 45000,
-    });
+/**
+ * Loguea al admin de Tiendanube. Lanza error si falla. Devuelve la URL final
+ * después del login (debería estar en el admin de la tienda).
+ */
+async function loginToTiendanube(page) {
+  const user = process.env.TIENDANUBE_USER;
+  const pass = process.env.TIENDANUBE_PASS;
+  if (!user || !pass) throw new Error("Faltan TIENDANUBE_USER / TIENDANUBE_PASS");
 
-    // Esperar a que cargue el "picker" de login (Google / Apple / e-mail)
-    await page.waitForTimeout(4000);
+  await page.goto("https://www.tiendanube.com/login", {
+    waitUntil: "domcontentloaded",
+    timeout: 45000,
+  });
+  await page.waitForTimeout(4000); // hidratar SPA
 
-    // Cerrar cookie banner si aparece (no bloqueante)
-    const cookieBtns = [
-      'button:has-text("Aceptar")',
-      'button:has-text("Acepto")',
-      'button:has-text("OK")',
-      '[id*="cookie"] button',
-    ];
-    for (const sel of cookieBtns) {
-      const btn = page.locator(sel).first();
-      if (await btn.isVisible().catch(() => false)) {
-        await btn.click().catch(() => {});
-        await page.waitForTimeout(500);
-        break;
+  // Cookie banner
+  for (const sel of ['button:has-text("Aceptar")', 'button:has-text("Acepto")', '[id*="cookie"] button']) {
+    const btn = page.locator(sel).first();
+    if (await btn.isVisible().catch(() => false)) {
+      await btn.click().catch(() => {});
+      await page.waitForTimeout(500);
+      break;
+    }
+  }
+
+  // Picker: "Ingresar con e-mail"
+  const emailButton = page
+    .locator('button:has-text("Ingresar con e-mail"), a:has-text("Ingresar con e-mail"), [data-component*="email"]')
+    .first();
+  await emailButton.waitFor({ state: "visible", timeout: 10000 });
+  await emailButton.click();
+  await page.waitForTimeout(1500);
+
+  // Email + password
+  const emailInput = page.locator('input[name="user-mail"], input[type="email"]').filter({ visible: true }).first();
+  await emailInput.waitFor({ state: "visible", timeout: 10000 });
+  await emailInput.fill(user);
+
+  const passInput = page.locator('input[name="pass"], input[type="password"]').filter({ visible: true }).first();
+  await passInput.waitFor({ state: "visible", timeout: 10000 });
+  await passInput.fill(pass);
+
+  // Submit
+  const submit = page.locator('button[type="submit"]').filter({ visible: true }).first();
+  const nav = page.waitForURL(/.+/, { timeout: 30000 }).catch(() => null);
+  await submit.click();
+  await nav;
+  await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(3000);
+
+  // OTP por email (Tiendanube manda código cuando IP es nueva)
+  if (page.url().includes("/auth/otp")) {
+    console.log("[login] /auth/otp detectado, buscando código en Gmail...");
+    let otp = null;
+    for (let i = 0; i < 10; i++) {
+      await page.waitForTimeout(3000);
+      try {
+        otp = await getLatestTiendanubeOtp();
+        if (otp) break;
+      } catch (e) {
+        console.log(`[login] intento ${i + 1} Gmail falló:`, e?.message);
       }
     }
+    if (!otp) throw new Error("No pude obtener el OTP de Gmail");
 
-    // Click en "Ingresar con e-mail" para revelar el form de email+password.
-    // El picker inicial tiene 3 opciones: Google, Apple y e-mail.
-    const emailButton = page
-      .locator('button:has-text("Ingresar con e-mail"), a:has-text("Ingresar con e-mail"), [data-component*="email"]')
-      .first();
+    const otpInputs = await page
+      .locator('input[type="text"], input[inputmode="numeric"], input[type="number"], input[type="tel"]')
+      .filter({ visible: true })
+      .all();
 
-    try {
-      await emailButton.waitFor({ state: "visible", timeout: 10000 });
-      await emailButton.click();
-    } catch {
-      const dump = await debugDump(page, "No encontré el botón 'Ingresar con e-mail'");
-      return dump;
+    if (otpInputs.length === 6) {
+      for (let i = 0; i < 6; i++) await otpInputs[i].fill(otp[i]);
+    } else if (otpInputs.length >= 1) {
+      await otpInputs[0].fill(otp);
+    } else {
+      throw new Error("No encontré inputs para tipear el OTP");
     }
 
-    // Esperar a que el form de email+password se haga visible
-    await page.waitForTimeout(1500);
-
-    // Inputs reales de Tiendanube: name="user-mail" y name="pass"
-    const emailLocator = page
-      .locator('input[name="user-mail"], input[type="email"], input[id="user-mail"]')
+    const otpSubmit = page
+      .locator('button[type="submit"], button:has-text("Verificar"), button:has-text("Continuar"), button:has-text("Confirmar")')
       .filter({ visible: true })
       .first();
-
-    try {
-      await emailLocator.waitFor({ state: "visible", timeout: 10000 });
-    } catch {
-      const dump = await debugDump(page, "No apareció el input de email después de clickear 'Ingresar con e-mail'");
-      return dump;
-    }
-
-    await emailLocator.fill(user);
-
-    const passLocator = page
-      .locator('input[name="pass"], input[type="password"], input[id="pass"]')
-      .filter({ visible: true })
-      .first();
-    await passLocator.waitFor({ state: "visible", timeout: 10000 });
-    await passLocator.fill(pass);
-
-    // Botón submit — probamos el más obvio primero
-    const submitLocator = page
-      .locator('button[type="submit"], button:has-text("Ingresar"), button:has-text("Iniciar"), input[type="submit"]')
-      .filter({ visible: true })
-      .first();
-
-    // Navegamos después de submit. Algunas implementaciones hacen SPA y no disparan navegación.
-    const navPromise = page.waitForURL(/.+/, { timeout: 30000 }).catch(() => null);
-    await submitLocator.click();
-    await navPromise;
-    // Esperar el DOM cargado, no networkidle (Tiendanube nunca llega a idle por analytics)
+    const otpNav = page.waitForURL(/.+/, { timeout: 30000 }).catch(() => null);
+    await otpSubmit.click().catch(() => {});
+    await otpNav;
     await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(3000); // dar tiempo a redirects post-login
+    await page.waitForTimeout(2500);
+  }
 
-    // Si caímos en /auth/otp, Tiendanube nos pide código de verificación por email
-    if (page.url().includes("/auth/otp")) {
-      console.log("[testLogin] /auth/otp detectado, buscando código en Gmail...");
+  if (page.url().includes("/login") || page.url().includes("/auth/otp")) {
+    throw new Error(`Login no avanzó. URL final: ${page.url()}`);
+  }
 
-      // Esperar a que el email llegue (puede tardar 5-30s). Intentamos cada 3s hasta 8 veces.
-      let otpCode = null;
-      for (let i = 0; i < 10; i++) {
-        await page.waitForTimeout(3000);
-        try {
-          otpCode = await getLatestTiendanubeOtp();
-          if (otpCode) {
-            console.log(`[testLogin] OTP encontrado (intento ${i + 1})`);
-            break;
-          }
-        } catch (e) {
-          console.log(`[testLogin] intento ${i + 1} de leer Gmail falló:`, e?.message);
-        }
-      }
+  return page.url();
+}
 
-      if (!otpCode) {
-        const dump = await debugDump(page, "No pude leer el OTP de Gmail después de 30s");
-        return dump;
-      }
-
-      // Llenar el código. Puede ser 1 input de 6 dígitos o 6 inputs de 1 dígito cada uno.
-      const otpInputs = await page
-        .locator('input[type="text"], input[inputmode="numeric"], input[type="number"], input[type="tel"]')
-        .filter({ visible: true })
-        .all();
-
-      if (otpInputs.length === 6) {
-        for (let i = 0; i < 6; i++) {
-          await otpInputs[i].fill(otpCode[i]);
-        }
-      } else if (otpInputs.length >= 1) {
-        await otpInputs[0].fill(otpCode);
-      } else {
-        const dump = await debugDump(page, `Llegué al OTP con código ${otpCode} pero no encontré inputs para tipearlo`);
-        return dump;
-      }
-
-      // Submit del OTP
-      const otpSubmit = page
-        .locator('button[type="submit"], button:has-text("Verificar"), button:has-text("Continuar"), button:has-text("Confirmar"), button:has-text("Enviar")')
-        .filter({ visible: true })
-        .first();
-
-      const otpNavPromise = page.waitForURL(/.+/, { timeout: 30000 }).catch(() => null);
-      await otpSubmit.click().catch(() => {});
-      await otpNavPromise;
-      await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
-      await page.waitForTimeout(2500);
-    }
-
-    const finalUrl = page.url();
-    const title = await page.title();
-    const looksLoggedIn = !finalUrl.includes("/login") && !finalUrl.includes("/auth/otp");
-
-    if (!looksLoggedIn) {
-      const dump = await debugDump(page, "Login no avanzó (sigue en /login o /auth/otp). Probablemente OTP incorrecto.");
-      return dump;
-    }
-
+/**
+ * Test que solo loguea y reporta. Lo usa el admin para verificar credenciales.
+ */
+export async function testLogin() {
+  const { browser, page } = await launchBrowser();
+  try {
+    const finalUrl = await loginToTiendanube(page);
     return {
       loggedIn: true,
       url: finalUrl,
-      title,
+      title: await page.title().catch(() => ""),
+    };
+  } catch (err) {
+    return await debugDump(page, err?.message || String(err));
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
+ * Navega a cualquier URL después de loguear y devuelve HTML snippet + screenshot.
+ * Útil para inspeccionar páginas del admin que aún no automatizamos.
+ */
+export async function inspectUrl(url) {
+  if (!url) throw new Error("Falta el parámetro 'url'");
+  const { browser, page } = await launchBrowser();
+  try {
+    await loginToTiendanube(page);
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForTimeout(5000); // dar tiempo al SPA a renderizar
+    return await debugDump(page, "Inspección exitosa");
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
+ * FASE 3 (en progreso): llena los campos del paso 1 del form de "Envío manual"
+ * de Envío Nube. Por ahora corre en DRY RUN: llena todo pero NO aprieta Continuar.
+ * Devuelve un screenshot para que el admin verifique.
+ *
+ * Input esperado:
+ *   {
+ *     mode: "domicilio" | "sucursal",
+ *     destZip: "1425",
+ *     alto: 10, ancho: 15, profundidad: 10, peso: 500,  // gramos
+ *     valor: 15888.34,  // valor declarado / monto abonado
+ *     recipient: { nombre, apellido, email, telefono }  // solo para sucursal
+ *   }
+ */
+export async function createShipment(input) {
+  const { mode, destZip, alto = 10, ancho = 15, profundidad = 10, peso, valor, recipient } = input || {};
+
+  if (!mode || (mode !== "domicilio" && mode !== "sucursal")) {
+    throw new Error("input.mode debe ser 'domicilio' o 'sucursal'");
+  }
+  if (mode === "domicilio" && !destZip) throw new Error("Falta destZip para envío a domicilio");
+  if (mode === "sucursal" && (!recipient?.nombre || !recipient?.apellido)) {
+    throw new Error("Para sucursal hace falta recipient.nombre y recipient.apellido");
+  }
+
+  const url =
+    mode === "domicilio"
+      ? "https://gelica.mitiendanube.com/admin/apps/envionube/ar#/create-single-shipment"
+      : "https://gelica.mitiendanube.com/admin/apps/envionube/ar#/agency-shipment";
+
+  const { browser, page } = await launchBrowser();
+  try {
+    await loginToTiendanube(page);
+
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForTimeout(6000); // SPA tarda en renderizar el form
+
+    if (mode === "domicilio") {
+      // Paso 1: zip + paquete
+      const zipInput = page
+        .locator('input[placeholder*="código postal" i], input[placeholder*="codigo postal" i]')
+        .filter({ visible: true })
+        .first();
+      await zipInput.waitFor({ state: "visible", timeout: 15000 });
+      await zipInput.fill(String(destZip));
+
+      // Dimensiones por label "Alto", "Ancho", "Profundidad", "Peso"
+      await fillByLabel(page, "Alto", String(alto));
+      await fillByLabel(page, "Ancho", String(ancho));
+      await fillByLabel(page, "Profundidad", String(profundidad));
+      if (peso) await fillByLabel(page, "Peso", String(peso));
+      if (valor) await fillByLabel(page, "Monto total abonado", String(valor));
+    } else {
+      // Sucursal: destinatario + paquete + valor
+      if (recipient.nombre) await fillByLabel(page, "Nombre", recipient.nombre);
+      if (recipient.apellido) await fillByLabel(page, "Apellido", recipient.apellido);
+      if (recipient.email) await fillByLabel(page, "Email", recipient.email);
+      if (recipient.telefono) await fillByLabel(page, "Teléfono", recipient.telefono);
+      await fillByLabel(page, "Alto", String(alto));
+      await fillByLabel(page, "Ancho", String(ancho));
+      await fillByLabel(page, "Profundidad", String(profundidad));
+      if (peso) await fillByLabel(page, "Peso", String(peso));
+      if (valor) await fillByLabel(page, "Valor declarado", String(valor));
+    }
+
+    // DRY RUN: no apretamos Continuar. Tomamos screenshot.
+    await page.waitForTimeout(1500);
+    const dump = await debugDump(page, `Paso 1 llenado (DRY RUN). Modo: ${mode}.`);
+    return {
+      ...dump,
+      dryRun: true,
+      inputUsed: { mode, destZip, alto, ancho, profundidad, peso, valor, recipient },
     };
   } finally {
     await browser.close();
@@ -196,14 +244,49 @@ export async function testLogin() {
 }
 
 /**
- * Devuelve info de debug del estado actual de la página. Útil cuando el robot
- * no encuentra los elementos esperados y necesitamos ver qué está pasando.
+ * Llena un input ubicándolo por el texto de su label. Recorre los <label> y va
+ * al input asociado (sea por for/id o por proximidad DOM).
+ */
+async function fillByLabel(page, labelText, value) {
+  // Probamos el form pattern más común: label seguido o cerca del input
+  const loc = page.locator(`label:has-text("${labelText}")`).first();
+  const count = await loc.count();
+  if (count === 0) {
+    console.log(`[fillByLabel] no encontré label "${labelText}"`);
+    return;
+  }
+
+  // Intentar via for/id
+  const forAttr = await loc.getAttribute("for").catch(() => null);
+  if (forAttr) {
+    const input = page.locator(`#${cssEscape(forAttr)}`).first();
+    if ((await input.count()) > 0) {
+      await input.fill(value).catch(() => {});
+      return;
+    }
+  }
+
+  // Fallback: buscar el input dentro o cerca del label
+  const nearbyInput = loc.locator("xpath=following::input[1]").first();
+  if ((await nearbyInput.count()) > 0) {
+    await nearbyInput.fill(value).catch(() => {});
+    return;
+  }
+
+  console.log(`[fillByLabel] no encontré input para "${labelText}"`);
+}
+
+function cssEscape(s) {
+  return String(s).replace(/[^a-zA-Z0-9_-]/g, (c) => "\\" + c);
+}
+
+/**
+ * Devuelve info de debug del estado actual de la página.
  */
 async function debugDump(page, message) {
   const url = page.url();
   const title = await page.title().catch(() => "(sin título)");
 
-  // Screenshot (siempre intentamos; si falla, null)
   let screenshot = null;
   try {
     const buf = await page.screenshot({ type: "jpeg", quality: 50, fullPage: false });
@@ -212,24 +295,21 @@ async function debugDump(page, message) {
     console.log("[debugDump] screenshot failed:", e?.message);
   }
 
-  // TODOS los inputs (no filtramos por visibilidad)
   const allInputs = await page.$$eval("input", (els) =>
     els.map((el) => ({
       name: el.getAttribute("name"),
       id: el.id || null,
       type: el.type,
+      value: el.value,
       visible: el.offsetParent !== null,
       placeholder: el.placeholder || null,
     }))
   ).catch(() => []);
 
-  // Snippet del HTML body (primeros 2000 chars) — sirve para ver si es captcha,
-  // bot challenge, página vacía, etc.
   const bodyHtml = await page
-    .evaluate(() => document.body?.innerHTML?.slice(0, 2000) || "(sin body)")
+    .evaluate(() => document.body?.innerHTML?.slice(0, 3000) || "(sin body)")
     .catch(() => "(error leyendo body)");
 
-  // Forms (puede que el login esté dentro de un <form> identificable)
   const forms = await page.$$eval("form", (fs) =>
     fs.map((f) => ({ id: f.id || null, action: f.action || null, method: f.method || null }))
   ).catch(() => []);
@@ -237,7 +317,7 @@ async function debugDump(page, message) {
   console.log("[debugDump]", { url, title, inputCount: allInputs.length, formCount: forms.length });
 
   return {
-    loggedIn: false,
+    loggedIn: !url.includes("/login") && !url.includes("/auth/otp"),
     error: message,
     url,
     title,
@@ -245,15 +325,5 @@ async function debugDump(page, message) {
     visibleInputs: allInputs,
     bodyHtmlSnippet: bodyHtml,
     screenshot,
-  };
-}
-
-/**
- * FASE 3+: stub para crear un envío.
- */
-export async function createShipment(input) {
-  return {
-    received: input,
-    note: "Aún no implementado. Estamos en Fase 1.",
   };
 }

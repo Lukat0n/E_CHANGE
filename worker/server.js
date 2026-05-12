@@ -1,5 +1,5 @@
 import express from "express";
-import { testLogin, createShipment } from "./robot.js";
+import { testLogin, createShipment, inspectUrl } from "./robot.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -33,7 +33,21 @@ app.post("/api/test-login", requireApiKey, async (_req, res) => {
   }
 });
 
-// FASE 3+: Crear un envío
+// Navegar a una URL del admin y devolver HTML + screenshot.
+// Útil para inspeccionar páginas que aún no automatizamos.
+app.post("/api/inspect-url", requireApiKey, async (req, res) => {
+  try {
+    const { url } = req.body || {};
+    if (!url) return res.status(400).json({ ok: false, error: "Falta 'url' en el body" });
+    const result = await inspectUrl(url);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("[/api/inspect-url] failed:", err);
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// FASE 3+: Crear un envío (DRY RUN — no submitea aún)
 app.post("/api/shipment", requireApiKey, async (req, res) => {
   try {
     const result = await createShipment(req.body);

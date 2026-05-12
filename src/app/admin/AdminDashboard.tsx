@@ -65,6 +65,7 @@ export default function AdminDashboard({
   const [robotResult, setRobotResult] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [robotDebug, setRobotDebug] = useState<any | null>(null);
+  const [inspectUrl, setInspectUrl] = useState("https://gelica.mitiendanube.com/admin/apps/envionube/ar#/create-single-shipment");
   const router = useRouter();
 
   const filteredClaims = claims.filter((c) => {
@@ -123,11 +124,30 @@ export default function AdminDashboard({
         setRobotResult(`✅ Login OK — URL final: ${data.url}`);
       } else {
         setRobotResult(`⚠️ ${data.error || `Login falló (url: ${data.url || "?"})`}`);
-        // Si hay info de debug (inputs / screenshot) la guardamos para mostrar
         if (data.url || data.visibleInputs || data.screenshot) {
           setRobotDebug(data);
         }
       }
+    } catch (err) {
+      setRobotResult(`❌ ${err instanceof Error ? err.message : "Error"}`);
+    } finally {
+      setTestingRobot(false);
+    }
+  }
+
+  async function inspectRobotUrl() {
+    setTestingRobot(true);
+    setRobotResult(null);
+    setRobotDebug(null);
+    try {
+      const res = await fetch("/api/worker/inspect-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: inspectUrl }),
+      });
+      const data = await res.json();
+      setRobotResult(`📄 Inspección — URL: ${data.url || inspectUrl}`);
+      setRobotDebug(data);
     } catch (err) {
       setRobotResult(`❌ ${err instanceof Error ? err.message : "Error"}`);
     } finally {
@@ -265,16 +285,34 @@ export default function AdminDashboard({
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-900">Robot Envío Nube</p>
               <p className="text-xs text-gray-500">
-                Probá que el worker pueda loguear al admin de Tiendanube.
+                Login y navegación al admin de Tiendanube.
                 {robotResult && <span className="ml-2 font-medium">{robotResult}</span>}
               </p>
             </div>
             <button
               onClick={testRobotLogin}
               disabled={testingRobot}
-              className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50"
+              className="bg-gray-900 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-gray-800 transition disabled:opacity-50"
             >
-              {testingRobot ? "Probando..." : "Probar login del robot"}
+              {testingRobot ? "..." : "Test login"}
+            </button>
+          </div>
+
+          {/* Inspeccionar URL del admin */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 pt-3 border-t border-gray-100">
+            <input
+              type="text"
+              value={inspectUrl}
+              onChange={(e) => setInspectUrl(e.target.value)}
+              className="flex-1 min-w-[200px] border border-gray-300 rounded px-2 py-1 text-xs text-gray-900 font-mono"
+              placeholder="URL del admin para inspeccionar"
+            />
+            <button
+              onClick={inspectRobotUrl}
+              disabled={testingRobot || !inspectUrl}
+              className="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-blue-700 transition disabled:opacity-50"
+            >
+              {testingRobot ? "..." : "Inspeccionar URL"}
             </button>
           </div>
 
