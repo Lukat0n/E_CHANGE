@@ -46,7 +46,16 @@ interface ShippingOption {
   branches?: string[];
 }
 
-const CAMBIO_PRECIO = 9968;
+// Costo fijo del cambio (cubre envíos del producto original al depósito y del nuevo al cliente).
+// Varía según el modo de entrega elegido.
+const CAMBIO_PRECIO_DOMICILIO = 14989;
+const CAMBIO_PRECIO_SUCURSAL = 9977;
+const CAMBIO_PRECIO_PRESENCIAL = 0;
+function getCambioPrecio(mode: "domicilio" | "sucursal" | "presencial"): number {
+  if (mode === "domicilio") return CAMBIO_PRECIO_DOMICILIO;
+  if (mode === "sucursal") return CAMBIO_PRECIO_SUCURSAL;
+  return CAMBIO_PRECIO_PRESENCIAL;
+}
 
 function shippingStatusLabel(status: string) {
   const map: Record<string, string> = {
@@ -278,7 +287,7 @@ export default function HomePage() {
             shippingMode: deliveryMode,
             shippingMethodCode: deliveryMode === "presencial" ? "presencial-deposito" : (selectedShipping?.code || ""),
             shippingMethodName: deliveryMode === "presencial"
-              ? "Retiro en depósito - La Espuela 2757, Ituzaingó (hasta 19hs)"
+              ? "Retiro en depósito - La Espuela 2757, Ituzaingó (a coordinar)"
               : (selectedShipping?.name || ""),
             shippingCost: deliveryMode === "presencial" ? 0 : (selectedShipping?.price ?? null),
           }),
@@ -742,7 +751,7 @@ export default function HomePage() {
                   <>
                     <div className="flex justify-between text-sm text-gray-700">
                       <span>Costo del cambio (envíos):</span>
-                      <span className="font-semibold">${CAMBIO_PRECIO.toLocaleString("es-AR")}</span>
+                      <span className="font-semibold">${getCambioPrecio(deliveryMode).toLocaleString("es-AR")}</span>
                     </div>
                     <p className="text-xs text-gray-500 -mt-1">
                       Cubre el envío del producto original a nuestro depósito y el envío del producto nuevo a tu dirección.
@@ -756,7 +765,7 @@ export default function HomePage() {
                     <div className="border-t border-blue-200 pt-2 flex justify-between">
                       <span className="font-semibold text-gray-900">Total</span>
                       <span className="text-2xl font-bold text-gray-900">
-                        ${(CAMBIO_PRECIO + (selectedShipping?.price || 0)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${(getCambioPrecio(deliveryMode) + (selectedShipping?.price || 0)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   </>
@@ -817,11 +826,11 @@ export default function HomePage() {
                     <div className="flex-1">
                       <p className="font-semibold text-gray-900">Depósito Gelica</p>
                       <p className="text-sm text-gray-700">La Espuela 2757, Ituzaingó</p>
-                      <p className="text-sm text-gray-700"><span className="font-medium">Horario:</span> hasta las 19:00 hs</p>
+                      <p className="text-sm text-gray-700"><span className="font-medium">Horario:</span> a coordinar</p>
                     </div>
                   </div>
                   <p className="text-xs text-green-800 bg-white/50 rounded p-2">
-                    Llevá el producto original y te entregamos el nuevo. Te vamos a contactar para coordinar el día y horario.
+                    Llevá el producto original y te entregamos el nuevo. Te vamos a contactar para coordinar día y horario.
                   </p>
                 </div>
               )}

@@ -340,7 +340,7 @@ export default function AdminDashboard({
                         {selectedClaim.shippingRecipientName}{selectedClaim.shippingRecipientLastName ? ` ${selectedClaim.shippingRecipientLastName}` : ""}
                       </p>
                       {selectedClaim.shippingMode === "presencial" ? (
-                        <p className="text-gray-700">Coordinar retiro en <strong>La Espuela 2757, Ituzaingó</strong> (hasta 19hs).</p>
+                        <p className="text-gray-700">Coordinar retiro en <strong>La Espuela 2757, Ituzaingó</strong> (día y horario a coordinar).</p>
                       ) : (
                         <>
                           {selectedClaim.shippingMode !== "sucursal" && selectedClaim.shippingAddress && (
