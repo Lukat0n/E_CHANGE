@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { findStore } from "@/lib/store";
 import { isAuthenticated } from "@/lib/auth";
+import { createPreference } from "@/lib/mercadopago";
 
 // GET: List claims (admin)
 export async function GET(req: NextRequest) {
@@ -93,6 +94,43 @@ export async function POST(req: NextRequest) {
         shippingCost: typeof shippingCost === "number" ? shippingCost : null,
       },
     });
+
+    // Create MP payment preference for cambio (non-presencial) and reenvio
+    const needsPayment =
+      (type === "cambio" && shippingMode !== "presencial" && typeof shippingCost === "number" && shippingCost > 0) ||
+      (type === "reenvio" && typeof shippingCost === "number" && shippingCost > 0);
+
+    if (needsPayment) {
+      try {
+        const baseUrl = req.nextUrl.origin;
+        const title =
+          type === "cambio" ? `Cambio - Orden #${orderNumber}` : `Reenvío - Orden #${orderNumber}`;
+        const pref = await createPreference({
+          claimId: claim.id,
+          title,
+          amount: shippingCost as number,
+          payerEmail: customerEmail || null,
+          payerName: customerName || null,
+          baseUrl,
+        });
+        if (pref) {
+          const updated = await prisma.claim.update({
+            where: { id: claim.id },
+            data: {
+              paymentStatus: "pending",
+              paymentAmount: shippingCost as number,
+              mpPreferenceId: pref.id,
+              mpInitPoint: pref.init_point,
+            },
+          });
+          return NextResponse.json(updated, { status: 201 });
+        }
+      } catch (err) {
+        console.error("[claims POST] MP preference creation failed:", err);
+        // Continue with claim already created (admin can handle payment manually)
+      }
+    }
+
     return NextResponse.json(claim, { status: 201 });
   } catch (err) {
     // Log the real error so it shows up in Vercel logs.

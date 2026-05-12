@@ -42,10 +42,16 @@ model Claim {
   shippingRecipientName     String?
   shippingRecipientLastName String?
   // Shipping method (selected via Envío Nube storefront calculator)
-  shippingMode         String?   // "domicilio" | "sucursal"
+  shippingMode         String?   // "domicilio" | "sucursal" | "presencial"
   shippingMethodCode   String?
   shippingMethodName   String?
   shippingCost         Float?
+  // Mercado Pago payment tracking
+  paymentStatus        String?   // null | "pending" | "approved" | "rejected" | "cancelled"
+  paymentId            String?   // MP payment id once paid
+  paymentAmount        Float?    // Total charged via MP (already includes 6% surcharge)
+  mpPreferenceId       String?
+  mpInitPoint          String?   // Checkout URL
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

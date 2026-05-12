@@ -29,6 +29,10 @@ interface Claim {
   shippingMethodCode: string | null;
   shippingMethodName: string | null;
   shippingCost: number | null;
+  paymentStatus: string | null;
+  paymentId: string | null;
+  paymentAmount: number | null;
+  mpInitPoint: string | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }

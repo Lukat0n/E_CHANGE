@@ -48,15 +48,20 @@ interface ShippingOption {
   branches?: string[];
 }
 
-// Costo fijo del cambio (cubre envíos del producto original al depósito y del nuevo al cliente).
-// Varía según el modo de entrega elegido.
+// Costo base del cambio (cubre envíos del producto original al depósito y del nuevo al cliente).
+// Varía según el modo de entrega elegido. Al cliente se le muestra base * 1.06 (absorbe la comisión MP).
 const CAMBIO_PRECIO_DOMICILIO = 14989;
 const CAMBIO_PRECIO_SUCURSAL = 9977;
 const CAMBIO_PRECIO_PRESENCIAL = 0;
+const SURCHARGE = 1.06;
 function getCambioPrecio(mode: "domicilio" | "sucursal" | "presencial"): number {
   if (mode === "domicilio") return CAMBIO_PRECIO_DOMICILIO;
   if (mode === "sucursal") return CAMBIO_PRECIO_SUCURSAL;
   return CAMBIO_PRECIO_PRESENCIAL;
+}
+// Convierte un precio base a lo que el cliente paga (con sobrecargo silencioso de comisión MP).
+function publicPrice(base: number): number {
+  return Math.round(base * SURCHARGE * 100) / 100;
 }
 
 function shippingStatusLabel(status: string) {
@@ -114,6 +119,8 @@ export default function HomePage() {
   const [verifying, setVerifying] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [paymentLink, setPaymentLink] = useState<string | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<number | null>(null);
   // Shipping address for cambio
   const [shipZipcode, setShipZipcode] = useState("");
   const [shipProvince, setShipProvince] = useState("");
@@ -283,7 +290,8 @@ export default function HomePage() {
             shippingMode: "domicilio",
             shippingMethodCode: "reenvio",
             shippingMethodName: orderInfo.shippingOptionName || orderInfo.shippingCarrier || "Reenvío",
-            shippingCost: orderInfo.shippingCostOwner ?? null,
+            // Final amount the customer pays (already includes 6% surcharge)
+            shippingCost: orderInfo.shippingCostOwner != null ? publicPrice(orderInfo.shippingCostOwner) : null,
           }),
           ...(claimType === "cambio" && {
             // For presencial we don't collect CP/dirección
@@ -303,7 +311,10 @@ export default function HomePage() {
             shippingMethodName: deliveryMode === "presencial"
               ? "Retiro en depósito - La Espuela 2757, Ituzaingó (a coordinar)"
               : (selectedShipping?.name || ""),
-            shippingCost: deliveryMode === "presencial" ? 0 : (selectedShipping?.price ?? null),
+            // Final amount the customer pays (already includes 6% surcharge)
+            shippingCost: deliveryMode === "presencial"
+              ? 0
+              : (selectedShipping ? publicPrice(getCambioPrecio(deliveryMode) + selectedShipping.price) : null),
           }),
         }),
       });
@@ -313,6 +324,11 @@ export default function HomePage() {
         throw new Error(data.error || "Error enviando el reclamo");
       }
 
+      const claimData = await claimRes.json();
+      if (claimData.mpInitPoint) {
+        setPaymentLink(claimData.mpInitPoint);
+        setPaymentAmount(claimData.paymentAmount ?? null);
+      }
       setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error inesperado");
@@ -350,8 +366,33 @@ export default function HomePage() {
                 : "Reclamo enviado"}
           </h2>
           <p className="text-gray-600 mb-6">
-            Tu solicitud fue registrada exitosamente. Te contactaremos pronto.
+            {paymentLink
+              ? "Para confirmar tu solicitud, completá el pago con Mercado Pago. Cuando se acredite, vamos a procesarla."
+              : "Tu solicitud fue registrada exitosamente. Te contactaremos pronto."}
           </p>
+
+          {paymentLink && (
+            <div className="mb-6 space-y-3">
+              {paymentAmount != null && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-sm text-gray-700">Total a pagar</p>
+                  <p className="text-2xl font-bold text-gray-900">
+                    ${paymentAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              )}
+              <a
+                href={paymentLink}
+                className="block w-full bg-[#009ee3] text-white py-3 rounded-lg font-semibold hover:bg-[#0086c4] transition"
+              >
+                Pagar con Mercado Pago
+              </a>
+              <p className="text-xs text-gray-500">
+                Vas a poder pagar con tarjeta, dinero en cuenta o transferencia.
+              </p>
+            </div>
+          )}
+
           <button
             onClick={() => {
               setSuccess(false);
@@ -379,11 +420,17 @@ export default function HomePage() {
               setSucursalOptions([]);
               setSelectedShippingCode("");
               setShippingError("");
+              setPaymentLink(null);
+              setPaymentAmount(null);
               setOverrideNotDelivered(false);
             }}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition"
+            className={`px-6 py-2 rounded-lg transition ${
+              paymentLink
+                ? "border border-gray-300 text-gray-700 hover:bg-gray-50"
+                : "bg-blue-600 text-white hover:bg-blue-700"
+            }`}
           >
-            Volver al inicio
+            {paymentLink ? "Pagar después" : "Volver al inicio"}
           </button>
         </div>
       </div>
@@ -778,7 +825,7 @@ export default function HomePage() {
                   <>
                     <div className="flex justify-between text-sm text-gray-700">
                       <span>Costo del cambio (envíos):</span>
-                      <span className="font-semibold">${getCambioPrecio(deliveryMode).toLocaleString("es-AR")}</span>
+                      <span className="font-semibold">${publicPrice(getCambioPrecio(deliveryMode)).toLocaleString("es-AR")}</span>
                     </div>
                     <p className="text-xs text-gray-500 -mt-1">
                       Cubre el envío del producto original a nuestro depósito y el envío del producto nuevo a tu dirección.
@@ -786,13 +833,13 @@ export default function HomePage() {
                     {selectedShipping && (
                       <div className="flex justify-between text-sm text-gray-700">
                         <span>Envío ({selectedShipping.name}):</span>
-                        <span className="font-semibold">${selectedShipping.price.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        <span className="font-semibold">${publicPrice(selectedShipping.price).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                     )}
                     <div className="border-t border-blue-200 pt-2 flex justify-between">
                       <span className="font-semibold text-gray-900">Total</span>
                       <span className="text-2xl font-bold text-gray-900">
-                        ${(getCambioPrecio(deliveryMode) + (selectedShipping?.price || 0)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${publicPrice(getCambioPrecio(deliveryMode) + (selectedShipping?.price || 0)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   </>
@@ -914,7 +961,7 @@ export default function HomePage() {
                               <div className="flex justify-between gap-2">
                                 <span className="text-sm font-medium text-gray-900">{opt.name}</span>
                                 <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">
-                                  ${opt.price.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  ${publicPrice(opt.price).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
                               </div>
                               {opt.branches && opt.branches.length > 0 && (
@@ -1122,7 +1169,7 @@ export default function HomePage() {
                   <span className="font-semibold text-gray-900">Costo del reenvío</span>
                   <span className="text-2xl font-bold text-gray-900">
                     {orderInfo?.shippingCostOwner != null
-                      ? `$${orderInfo.shippingCostOwner.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      ? `$${publicPrice(orderInfo.shippingCostOwner).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                       : "A coordinar"}
                   </span>
                 </div>

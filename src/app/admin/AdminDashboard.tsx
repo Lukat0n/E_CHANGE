@@ -28,6 +28,10 @@ interface Claim {
   shippingMethodCode: string | null;
   shippingMethodName: string | null;
   shippingCost: number | null;
+  paymentStatus: string | null;
+  paymentId: string | null;
+  paymentAmount: number | null;
+  mpInitPoint: string | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }
@@ -130,6 +134,27 @@ export default function AdminDashboard({
       case "cambio": return "bg-yellow-100 text-yellow-700";
       case "no_recibido": return "bg-purple-100 text-purple-700";
       case "reenvio": return "bg-blue-100 text-blue-700";
+      default: return "bg-gray-100 text-gray-700";
+    }
+  }
+
+  function paymentLabel(status: string | null) {
+    switch (status) {
+      case "approved": return "Pagado";
+      case "pending": case "in_process": return "Pago pendiente";
+      case "rejected": return "Pago rechazado";
+      case "cancelled": return "Pago cancelado";
+      case "refunded": return "Pago reembolsado";
+      default: return null;
+    }
+  }
+
+  function paymentBadgeColor(status: string | null) {
+    switch (status) {
+      case "approved": return "bg-green-100 text-green-700";
+      case "pending": case "in_process": return "bg-orange-100 text-orange-700";
+      case "rejected": case "cancelled": return "bg-red-100 text-red-700";
+      case "refunded": return "bg-gray-100 text-gray-700";
       default: return "bg-gray-100 text-gray-700";
     }
   }
@@ -241,6 +266,11 @@ export default function AdminDashboard({
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadgeColor(claim.status)}`}>
                         {claim.status.charAt(0).toUpperCase() + claim.status.slice(1)}
                       </span>
+                      {paymentLabel(claim.paymentStatus) && (
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${paymentBadgeColor(claim.paymentStatus)}`}>
+                          {paymentLabel(claim.paymentStatus)}
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm text-gray-600 mt-1 truncate">
                       {claim.customerName} - {claim.customerEmail}
@@ -290,14 +320,36 @@ export default function AdminDashboard({
               </div>
 
               <div className="space-y-3">
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${typeBadgeColor(selectedClaim.type)}`}>
                     {typeLabel(selectedClaim.type)}
                   </span>
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusBadgeColor(selectedClaim.status)}`}>
                     {selectedClaim.status.charAt(0).toUpperCase() + selectedClaim.status.slice(1)}
                   </span>
+                  {paymentLabel(selectedClaim.paymentStatus) && (
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${paymentBadgeColor(selectedClaim.paymentStatus)}`}>
+                      {paymentLabel(selectedClaim.paymentStatus)}
+                    </span>
+                  )}
                 </div>
+
+                {(selectedClaim.paymentStatus || selectedClaim.paymentAmount) && (
+                  <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm">
+                    <p className="font-medium text-gray-900">Pago (Mercado Pago)</p>
+                    {selectedClaim.paymentAmount != null && (
+                      <p><span className="font-medium text-gray-700">Monto:</span> ${selectedClaim.paymentAmount.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    )}
+                    {selectedClaim.paymentId && (
+                      <p><span className="font-medium text-gray-700">ID:</span> <span className="font-mono text-xs">{selectedClaim.paymentId}</span></p>
+                    )}
+                    {selectedClaim.paymentStatus === "pending" && selectedClaim.mpInitPoint && (
+                      <a href={selectedClaim.mpInitPoint} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline text-sm">
+                        Ver link de pago →
+                      </a>
+                    )}
+                  </div>
+                )}
 
                 <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm">
                   <p><span className="font-medium text-gray-700">Cliente:</span> <span className="text-gray-900">{selectedClaim.customerName}</span></p>
