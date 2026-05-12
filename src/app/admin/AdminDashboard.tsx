@@ -292,10 +292,22 @@ export default function AdminDashboard({
                     <span className="font-medium">Título:</span> {robotDebug.title}
                   </div>
                 )}
-                {robotDebug.visibleInputs && robotDebug.visibleInputs.length > 0 && (
+                {robotDebug.visibleInputs && (
                   <div className="bg-gray-50 rounded p-2">
                     <span className="font-medium block mb-1">Inputs en la página ({robotDebug.visibleInputs.length}):</span>
                     <pre className="text-[10px] overflow-x-auto">{JSON.stringify(robotDebug.visibleInputs, null, 2)}</pre>
+                  </div>
+                )}
+                {robotDebug.forms && robotDebug.forms.length > 0 && (
+                  <div className="bg-gray-50 rounded p-2">
+                    <span className="font-medium block mb-1">Forms en la página ({robotDebug.forms.length}):</span>
+                    <pre className="text-[10px] overflow-x-auto">{JSON.stringify(robotDebug.forms, null, 2)}</pre>
+                  </div>
+                )}
+                {robotDebug.bodyHtmlSnippet && (
+                  <div className="bg-gray-50 rounded p-2">
+                    <span className="font-medium block mb-1">HTML del body (primeros 2000 chars):</span>
+                    <pre className="text-[10px] overflow-x-auto whitespace-pre-wrap break-all">{robotDebug.bodyHtmlSnippet}</pre>
                   </div>
                 )}
                 {robotDebug.screenshot && (

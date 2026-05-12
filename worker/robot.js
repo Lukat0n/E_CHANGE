@@ -107,25 +107,50 @@ export async function testLogin() {
  */
 async function debugDump(page, message) {
   const url = page.url();
-  const title = await page.title().catch(() => "");
-  const screenshot = await page.screenshot({ type: "jpeg", quality: 60, fullPage: false }).catch(() => null);
-  const visibleInputs = await page.$$eval("input", (els) =>
+  const title = await page.title().catch(() => "(sin título)");
+
+  // Screenshot (siempre intentamos; si falla, null)
+  let screenshot = null;
+  try {
+    const buf = await page.screenshot({ type: "jpeg", quality: 50, fullPage: false });
+    screenshot = buf.toString("base64");
+  } catch (e) {
+    console.log("[debugDump] screenshot failed:", e?.message);
+  }
+
+  // TODOS los inputs (no filtramos por visibilidad)
+  const allInputs = await page.$$eval("input", (els) =>
     els.map((el) => ({
       name: el.getAttribute("name"),
-      id: el.id,
+      id: el.id || null,
       type: el.type,
       visible: el.offsetParent !== null,
-      placeholder: el.placeholder,
+      placeholder: el.placeholder || null,
     }))
   ).catch(() => []);
+
+  // Snippet del HTML body (primeros 2000 chars) — sirve para ver si es captcha,
+  // bot challenge, página vacía, etc.
+  const bodyHtml = await page
+    .evaluate(() => document.body?.innerHTML?.slice(0, 2000) || "(sin body)")
+    .catch(() => "(error leyendo body)");
+
+  // Forms (puede que el login esté dentro de un <form> identificable)
+  const forms = await page.$$eval("form", (fs) =>
+    fs.map((f) => ({ id: f.id || null, action: f.action || null, method: f.method || null }))
+  ).catch(() => []);
+
+  console.log("[debugDump]", { url, title, inputCount: allInputs.length, formCount: forms.length });
 
   return {
     loggedIn: false,
     error: message,
     url,
     title,
-    visibleInputs,
-    screenshot: screenshot ? screenshot.toString("base64") : null,
+    forms,
+    visibleInputs: allInputs,
+    bodyHtmlSnippet: bodyHtml,
+    screenshot,
   };
 }
 
