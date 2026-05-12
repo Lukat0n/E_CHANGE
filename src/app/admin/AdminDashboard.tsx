@@ -32,6 +32,9 @@ interface Claim {
   paymentId: string | null;
   paymentAmount: number | null;
   mpInitPoint: string | null;
+  whatsappStatus: string | null;
+  whatsappError: string | null;
+  whatsappSentAt: string | Date | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }
@@ -333,6 +336,22 @@ export default function AdminDashboard({
                     </span>
                   )}
                 </div>
+
+                {selectedClaim.whatsappStatus && (
+                  <div className={`rounded-lg p-3 text-sm ${selectedClaim.whatsappStatus === "sent" ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"}`}>
+                    <p className="font-medium text-gray-900">
+                      {selectedClaim.whatsappStatus === "sent" ? "WhatsApp enviado" : "WhatsApp falló"}
+                    </p>
+                    {selectedClaim.whatsappSentAt && selectedClaim.whatsappStatus === "sent" && (
+                      <p className="text-xs text-gray-600 mt-0.5">
+                        {new Date(selectedClaim.whatsappSentAt).toLocaleString("es-AR")}
+                      </p>
+                    )}
+                    {selectedClaim.whatsappError && (
+                      <p className="text-xs text-red-700 mt-0.5">{selectedClaim.whatsappError}</p>
+                    )}
+                  </div>
+                )}
 
                 {(selectedClaim.paymentStatus || selectedClaim.paymentAmount) && (
                   <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm">

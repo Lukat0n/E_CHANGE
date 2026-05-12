@@ -52,6 +52,10 @@ model Claim {
   paymentAmount        Float?    // Total charged via MP (already includes 6% surcharge)
   mpPreferenceId       String?
   mpInitPoint          String?   // Checkout URL
+  // WhatsApp notification tracking
+  whatsappStatus       String?   // null | "sent" | "failed"
+  whatsappError        String?   // last error message if failed
+  whatsappSentAt       DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

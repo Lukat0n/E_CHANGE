@@ -33,6 +33,9 @@ interface Claim {
   paymentId: string | null;
   paymentAmount: number | null;
   mpInitPoint: string | null;
+  whatsappStatus: string | null;
+  whatsappError: string | null;
+  whatsappSentAt: string | Date | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }
