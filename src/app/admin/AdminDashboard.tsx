@@ -61,6 +61,8 @@ export default function AdminDashboard({
   const [updating, setUpdating] = useState(false);
   const [editingPhone, setEditingPhone] = useState<{ customer: string; shipping: string } | null>(null);
   const [savingPhone, setSavingPhone] = useState(false);
+  const [testingRobot, setTestingRobot] = useState(false);
+  const [robotResult, setRobotResult] = useState<string | null>(null);
   const router = useRouter();
 
   const filteredClaims = claims.filter((c) => {
@@ -106,6 +108,24 @@ export default function AdminDashboard({
     ].filter(Boolean).join("\n");
     navigator.clipboard.writeText(lines);
     alert("Datos de envío copiados al portapapeles");
+  }
+
+  async function testRobotLogin() {
+    setTestingRobot(true);
+    setRobotResult(null);
+    try {
+      const res = await fetch("/api/worker/test-login", { method: "POST" });
+      const data = await res.json();
+      if (data.ok && data.loggedIn) {
+        setRobotResult(`✅ Login OK — URL final: ${data.url}`);
+      } else {
+        setRobotResult(`⚠️ ${data.error || `Login falló (url: ${data.url || "?"})`}`);
+      }
+    } catch (err) {
+      setRobotResult(`❌ ${err instanceof Error ? err.message : "Error"}`);
+    } finally {
+      setTestingRobot(false);
+    }
   }
 
   async function savePhone(id: string) {
@@ -230,6 +250,24 @@ export default function AdminDashboard({
             <p className="text-sm text-red-600">Rechazados</p>
             <p className="text-3xl font-bold text-red-600">{stats.rechazado}</p>
           </div>
+        </div>
+
+        {/* Robot panel (Fase 1) */}
+        <div className="bg-white rounded-xl p-4 shadow-sm border mb-4 flex flex-wrap items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-900">Robot Envío Nube</p>
+            <p className="text-xs text-gray-500">
+              Probá que el worker pueda loguear al admin de Tiendanube.
+              {robotResult && <span className="ml-2 font-medium">{robotResult}</span>}
+            </p>
+          </div>
+          <button
+            onClick={testRobotLogin}
+            disabled={testingRobot}
+            className="bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50"
+          >
+            {testingRobot ? "Probando..." : "Probar login del robot"}
+          </button>
         </div>
 
         {/* Filters */}

@@ -1,0 +1,18 @@
+{
+  "name": "echange-worker",
+  "version": "1.0.0",
+  "description": "Robot que crea envíos en Tiendanube usando Playwright",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "playwright": "^1.49.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
