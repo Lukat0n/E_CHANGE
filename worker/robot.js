@@ -84,12 +84,15 @@ async function loginToTiendanube(page) {
   await passInput.waitFor({ state: "visible", timeout: 10000 });
   await passInput.fill(pass);
 
-  // Submit dentro del login-form (no del picker hidden)
-  const submit = loginForm
-    .locator('button[type="submit"], button:has-text("Iniciar"), button:has-text("Ingresar")')
+  // Submit: el botón puede estar fuera del #login-form. Buscamos a nivel page,
+  // filtrando por texto típico de submit en español. El primero visible es el bueno.
+  const submit = page
+    .locator(
+      'button:has-text("Iniciar sesión"), button:has-text("Ingresar"), button[type="submit"]:not([style*="display:none"])'
+    )
     .filter({ visible: true })
     .first();
-  await submit.waitFor({ state: "visible", timeout: 10000 });
+  await submit.waitFor({ state: "visible", timeout: 15000 });
   const nav = page.waitForURL(/.+/, { timeout: 30000 }).catch(() => null);
   await submit.click();
   await nav;
