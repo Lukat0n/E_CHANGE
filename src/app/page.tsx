@@ -282,7 +282,7 @@ export default function HomePage() {
             shippingPhone: orderInfo.customer?.phone || "",
             shippingMode: "domicilio",
             shippingMethodCode: "reenvio",
-            shippingMethodName: orderInfo.shippingOption || orderInfo.shippingCarrier || "Reenvío",
+            shippingMethodName: orderInfo.shippingOptionName || orderInfo.shippingCarrier || "Reenvío",
             shippingCost: orderInfo.shippingCostOwner ?? null,
           }),
           ...(claimType === "cambio" && {
@@ -1116,7 +1116,7 @@ export default function HomePage() {
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
                 <div className="flex justify-between text-sm text-gray-700">
                   <span>Envío original:</span>
-                  <span className="font-medium text-gray-900 text-right">{orderInfo?.shippingOption || orderInfo?.shippingCarrier || "-"}</span>
+                  <span className="font-medium text-gray-900 text-right">{orderInfo?.shippingOptionName || orderInfo?.shippingCarrier || "-"}</span>
                 </div>
                 <div className="border-t border-blue-200 pt-2 flex justify-between">
                   <span className="font-semibold text-gray-900">Costo del reenvío</span>
