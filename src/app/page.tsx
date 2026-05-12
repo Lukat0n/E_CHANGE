@@ -1142,9 +1142,10 @@ export default function HomePage() {
               )}
 
               <div className="border border-gray-200 rounded-xl p-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Motivo del reenvío *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Motivo del reenvío <span className="text-gray-400">(opcional)</span>
+                </label>
                 <textarea
-                  required
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={4}
@@ -1159,7 +1160,7 @@ export default function HomePage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading || !description}
+                  disabled={loading}
                   className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? "Enviando..." : "Solicitar reenvío"}
