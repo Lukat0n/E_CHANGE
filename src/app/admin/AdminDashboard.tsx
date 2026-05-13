@@ -388,6 +388,18 @@ export default function AdminDashboard({
                     <pre className="text-[10px] overflow-x-auto">{JSON.stringify(robotDebug.forms, null, 2)}</pre>
                   </div>
                 )}
+                {robotDebug.paso2Buttons && robotDebug.paso2Buttons.length > 0 && (
+                  <div className="bg-gray-50 rounded p-2">
+                    <span className="font-medium block mb-1">Paso 2 buttons ({robotDebug.paso2Buttons.length}):</span>
+                    <pre className="text-[10px] overflow-x-auto">{JSON.stringify(robotDebug.paso2Buttons, null, 2)}</pre>
+                  </div>
+                )}
+                {robotDebug.filled && (
+                  <div className="bg-gray-50 rounded p-2">
+                    <span className="font-medium block mb-1">Campos llenados:</span>
+                    <pre className="text-[10px] overflow-x-auto">{JSON.stringify(robotDebug.filled, null, 2)}</pre>
+                  </div>
+                )}
                 {robotDebug.bodyHtmlSnippet && (
                   <div className="bg-gray-50 rounded p-2">
                     <span className="font-medium block mb-1">HTML del body (primeros 2000 chars):</span>
