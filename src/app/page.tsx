@@ -252,51 +252,14 @@ export default function HomePage() {
     (o) => o.code === selectedShippingCode
   );
 
-  // Para reenvío: calculamos un ratio que convierte precios storefront → merchant.
-  //
-  // El precio en el storefront tiene el markup que Tiendanube le agrega al cliente
-  // final. Para obtener el precio merchant (lo que ve el comercio en Envío Nube)
-  // usamos: ratio = shipping_cost_owner / storefront_price_del_carrier_original.
-  //
-  // Si el carrier original aparece a $0 en el storefront (por promo de envío gratis),
-  // calculamos el ratio con cualquier otro carrier no-promo que esté disponible.
-  // Aproximación: asumimos que el markup% es similar entre carriers de la misma
-  // categoría (domicilio/sucursal).
-  const reenvioMarkupRatio: number | null = (() => {
-    if (claimType !== "reenvio") return null;
-    if (!orderInfo?.shippingCostOwner || !orderInfo?.shippingOptionName) return null;
-    const all = [...domicilioOptions, ...sucursalOptions];
-    if (all.length === 0) return null;
-    const originalNamePart = (orderInfo.shippingOptionName.split(" - ").pop() || "").toLowerCase().trim();
-    const originalMatch = all.find(
-      (o) => originalNamePart && o.name.toLowerCase().includes(originalNamePart)
-    );
-    // Usamos el original si tiene precio > 0
-    if (originalMatch && originalMatch.price > 0) {
-      return orderInfo.shippingCostOwner / originalMatch.price;
-    }
-    // Fallback: cualquier carrier con precio > 0 (ratio aproximado)
-    const fallback = all.find((o) => o.price > 0);
-    if (fallback) return orderInfo.shippingCostOwner / fallback.price;
-    return null;
-  })();
-
-  // Precio merchant estimado para un carrier (para reenvío). Si es el carrier original
-  // exacto, usamos shipping_cost_owner directo. Si está a $0 (promo) y matchea con el
-  // original, también usamos shipping_cost_owner.
-  function reenvioMerchantPrice(carrier: ShippingOption): number {
+  // Para reenvío usamos el precio del storefront directo + 6% para MP.
+  // Es lo que el cliente pagaría en un checkout normal de Tiendanube + nuestra
+  // comisión silenciosa. Si el storefront retorna $0 (promo de envío gratis),
+  // usamos el shipping_cost_owner de la orden original como fallback.
+  function reenvioCarrierPrice(carrier: ShippingOption): number {
     if (claimType !== "reenvio") return carrier.price;
-    if (orderInfo?.shippingOptionName && orderInfo.shippingCostOwner) {
-      const originalNamePart = (orderInfo.shippingOptionName.split(" - ").pop() || "").toLowerCase().trim();
-      if (originalNamePart && carrier.name.toLowerCase().includes(originalNamePart)) {
-        return orderInfo.shippingCostOwner;
-      }
-    }
-    if (reenvioMarkupRatio != null && carrier.price > 0) {
-      return carrier.price * reenvioMarkupRatio;
-    }
-    // Sin ratio y sin precio storefront → usar shipping_cost_owner como fallback
-    return orderInfo?.shippingCostOwner ?? carrier.price;
+    if (carrier.price > 0) return carrier.price;
+    return orderInfo?.shippingCostOwner ?? 0;
   }
 
   // Reenvío: auto-fetch opciones de envío usando el CP de la orden original.
@@ -421,10 +384,9 @@ export default function HomePage() {
             shippingMethodCode: selectedShipping?.code || "reenvio",
             shippingMethodName: selectedShipping?.name || orderInfo.shippingOptionName || orderInfo.shippingCarrier || "Reenvío",
             // Costo merchant calculado para el carrier elegido + 6% MP surcharge.
-            // reenvioMerchantPrice usa el ratio derivado del shipping_cost_owner de
-            // la orden original para convertir el precio del storefront a merchant.
+            // Precio storefront del carrier elegido + 6% MP surcharge.
             shippingCost: selectedShipping
-              ? publicPrice(reenvioMerchantPrice(selectedShipping))
+              ? publicPrice(reenvioCarrierPrice(selectedShipping))
               : (orderInfo.shippingCostOwner != null ? publicPrice(orderInfo.shippingCostOwner) : null),
           }),
           ...(claimType === "cambio" && {
@@ -1306,7 +1268,7 @@ export default function HomePage() {
                   <span className="font-semibold text-gray-900">Costo del reenvío</span>
                   <span className="text-2xl font-bold text-gray-900">
                     {selectedShipping
-                      ? `$${publicPrice(reenvioMerchantPrice(selectedShipping)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      ? `$${publicPrice(reenvioCarrierPrice(selectedShipping)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                       : "—"}
                   </span>
                 </div>
@@ -1481,7 +1443,7 @@ export default function HomePage() {
                             <div className="flex justify-between gap-2">
                               <span className="text-sm font-medium text-gray-900">{opt.name}</span>
                               <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">
-                                ${publicPrice(reenvioMerchantPrice(opt)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                ${publicPrice(reenvioCarrierPrice(opt)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </span>
                             </div>
                             {opt.branches && opt.branches.length > 0 && (
