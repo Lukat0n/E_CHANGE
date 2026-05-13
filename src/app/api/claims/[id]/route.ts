@@ -17,7 +17,13 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { status, adminNotes, skipWhatsapp, customerPhone, shippingPhone } = body;
+  const {
+    status, adminNotes, skipWhatsapp,
+    customerPhone, customerName, customerEmail,
+    shippingPhone, shippingAddress, shippingNumber, shippingFloor,
+    shippingNeighborhood, shippingCity, shippingProvince, shippingZipcode,
+    shippingRecipientName, shippingRecipientLastName,
+  } = body;
 
   const validStatuses = ["pendiente", "aprobado", "rechazado"];
   if (status && !validStatuses.includes(status)) {
@@ -37,7 +43,18 @@ export async function PATCH(
   if (status) data.status = status;
   if (adminNotes !== undefined) data.adminNotes = adminNotes;
   if (customerPhone !== undefined) data.customerPhone = customerPhone || null;
+  if (customerName !== undefined) data.customerName = customerName || null;
+  if (customerEmail !== undefined) data.customerEmail = customerEmail || null;
   if (shippingPhone !== undefined) data.shippingPhone = shippingPhone || null;
+  if (shippingAddress !== undefined) data.shippingAddress = shippingAddress || null;
+  if (shippingNumber !== undefined) data.shippingNumber = shippingNumber || null;
+  if (shippingFloor !== undefined) data.shippingFloor = shippingFloor || null;
+  if (shippingNeighborhood !== undefined) data.shippingNeighborhood = shippingNeighborhood || null;
+  if (shippingCity !== undefined) data.shippingCity = shippingCity || null;
+  if (shippingProvince !== undefined) data.shippingProvince = shippingProvince || null;
+  if (shippingZipcode !== undefined) data.shippingZipcode = shippingZipcode || null;
+  if (shippingRecipientName !== undefined) data.shippingRecipientName = shippingRecipientName || null;
+  if (shippingRecipientLastName !== undefined) data.shippingRecipientLastName = shippingRecipientLastName || null;
 
   let claim = await prisma.claim.update({ where: { id }, data });
 

@@ -61,6 +61,9 @@ export default function AdminDashboard({
   const [updating, setUpdating] = useState(false);
   const [editingPhone, setEditingPhone] = useState<{ customer: string; shipping: string } | null>(null);
   const [savingPhone, setSavingPhone] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [editingShipping, setEditingShipping] = useState<any | null>(null);
+  const [savingShipping, setSavingShipping] = useState(false);
   const [testingRobot, setTestingRobot] = useState(false);
   const [robotResult, setRobotResult] = useState<string | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -233,6 +236,23 @@ export default function AdminDashboard({
     } finally {
       setTestingRobot(false);
     }
+  }
+
+  async function saveShipping(id: string) {
+    if (!editingShipping) return;
+    setSavingShipping(true);
+    const res = await fetch(`/api/claims/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(editingShipping),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setClaims(claims.map((c) => (c.id === id ? { ...c, ...updated } : c)));
+      if (selectedClaim?.id === id) setSelectedClaim({ ...selectedClaim, ...updated });
+      setEditingShipping(null);
+    }
+    setSavingShipping(false);
   }
 
   async function savePhone(id: string) {
@@ -710,15 +730,94 @@ export default function AdminDashboard({
 
                 {(selectedClaim.type === "cambio" || selectedClaim.type === "reenvio") && (selectedClaim.shippingZipcode || selectedClaim.shippingMode) && (
                   <div>
-                    <p className="text-sm font-medium text-gray-700 mb-1">
-                      {selectedClaim.type === "reenvio"
-                        ? "Datos del reenvío:"
-                        : selectedClaim.shippingMode === "presencial"
-                          ? "Retiro presencial en depósito:"
-                          : selectedClaim.shippingMode === "sucursal"
-                            ? "Retiro en sucursal (cambio):"
-                            : "Dirección de envío (cambio):"}
-                    </p>
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm font-medium text-gray-700">
+                        {selectedClaim.type === "reenvio"
+                          ? "Datos del reenvío:"
+                          : selectedClaim.shippingMode === "presencial"
+                            ? "Retiro presencial en depósito:"
+                            : selectedClaim.shippingMode === "sucursal"
+                              ? "Retiro en sucursal (cambio):"
+                              : "Dirección de envío (cambio):"}
+                      </p>
+                      {selectedClaim.shippingMode !== "presencial" && !editingShipping && (
+                        <button
+                          onClick={() => setEditingShipping({
+                            shippingAddress: selectedClaim.shippingAddress || "",
+                            shippingNumber: selectedClaim.shippingNumber || "",
+                            shippingFloor: selectedClaim.shippingFloor || "",
+                            shippingNeighborhood: selectedClaim.shippingNeighborhood || "",
+                            shippingCity: selectedClaim.shippingCity || "",
+                            shippingProvince: selectedClaim.shippingProvince || "",
+                            shippingZipcode: selectedClaim.shippingZipcode || "",
+                            shippingRecipientName: selectedClaim.shippingRecipientName || "",
+                            shippingRecipientLastName: selectedClaim.shippingRecipientLastName || "",
+                            shippingPhone: selectedClaim.shippingPhone || "",
+                          })}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          Editar dirección
+                        </button>
+                      )}
+                    </div>
+
+                    {editingShipping && (
+                      <div className="space-y-2 bg-white border border-gray-200 rounded-lg p-3 mb-2">
+                        <p className="text-xs font-medium text-gray-700">Editar datos de envío (lo que el robot va a usar)</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">Nombre</label>
+                            <input value={editingShipping.shippingRecipientName} onChange={(e) => setEditingShipping({ ...editingShipping, shippingRecipientName: e.target.value })} className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">Apellido</label>
+                            <input value={editingShipping.shippingRecipientLastName} onChange={(e) => setEditingShipping({ ...editingShipping, shippingRecipientLastName: e.target.value })} className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">Calle</label>
+                            <input value={editingShipping.shippingAddress} onChange={(e) => setEditingShipping({ ...editingShipping, shippingAddress: e.target.value })} className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">Número</label>
+                            <input value={editingShipping.shippingNumber} onChange={(e) => setEditingShipping({ ...editingShipping, shippingNumber: e.target.value })} className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">Depto/Piso</label>
+                            <input value={editingShipping.shippingFloor} onChange={(e) => setEditingShipping({ ...editingShipping, shippingFloor: e.target.value })} className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">Barrio</label>
+                            <input value={editingShipping.shippingNeighborhood} onChange={(e) => setEditingShipping({ ...editingShipping, shippingNeighborhood: e.target.value })} className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">Ciudad</label>
+                            <input value={editingShipping.shippingCity} onChange={(e) => setEditingShipping({ ...editingShipping, shippingCity: e.target.value })} className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">Provincia</label>
+                            <input value={editingShipping.shippingProvince} onChange={(e) => setEditingShipping({ ...editingShipping, shippingProvince: e.target.value })} className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-500 mb-0.5">CP</label>
+                            <input value={editingShipping.shippingZipcode} onChange={(e) => setEditingShipping({ ...editingShipping, shippingZipcode: e.target.value })} className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-0.5">Teléfono</label>
+                          <input value={editingShipping.shippingPhone} onChange={(e) => setEditingShipping({ ...editingShipping, shippingPhone: e.target.value })} className="w-full border border-gray-300 rounded px-2 py-1 text-sm text-gray-900" />
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <button onClick={() => setEditingShipping(null)} disabled={savingShipping} className="flex-1 border border-gray-300 text-gray-700 py-1.5 rounded text-xs font-medium hover:bg-gray-50 transition">Cancelar</button>
+                          <button onClick={() => saveShipping(selectedClaim.id)} disabled={savingShipping} className="flex-1 bg-blue-600 text-white py-1.5 rounded text-xs font-medium hover:bg-blue-700 transition disabled:opacity-50">{savingShipping ? "Guardando..." : "Guardar"}</button>
+                        </div>
+                      </div>
+                    )}
                     <div className={`${selectedClaim.shippingMode === "presencial" ? "bg-green-50 border-green-200" : "bg-blue-50 border-blue-200"} border rounded-lg p-3 space-y-1 text-sm`}>
                       {selectedClaim.shippingMethodName && (
                         <div className="flex justify-between pb-1 mb-1 border-b border-blue-200">

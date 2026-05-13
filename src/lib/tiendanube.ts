@@ -93,9 +93,14 @@ export function formatOrderInfo(order: Record<string, unknown>, storeDomain?: st
     shippingAddress: shipping
       ? {
           address: shipping.address,
+          number: shipping.number,
+          floor: shipping.floor,
+          locality: shipping.locality,
           city: shipping.city,
           province: shipping.province,
           zipcode: shipping.zipcode,
+          phone: shipping.phone,
+          name: shipping.name, // recipient name (puede tener "Nombre Apellido" junto)
         }
       : null,
     // Customer

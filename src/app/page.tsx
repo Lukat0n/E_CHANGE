@@ -20,9 +20,14 @@ interface OrderInfo {
   maxDeliveryDate: string | null;
   shippingAddress: {
     address: string;
+    number?: string;
+    floor?: string;
+    locality?: string;
     city: string;
     province: string;
     zipcode: string;
+    phone?: string;
+    name?: string;
   } | null;
   customer: {
     name: string;
@@ -281,12 +286,19 @@ export default function HomePage() {
           customerEmail: orderInfo?.customer?.email || customerEmail,
           customerPhone: orderInfo?.customer?.phone || "",
           ...(claimType === "reenvio" && orderInfo && {
-            // Persist original shipping context so admin sees price + method at a glance
+            // Persistimos todos los campos de la shipping_address original para que
+            // el robot tenga lo que necesita sin requerir edición manual del admin.
             shippingZipcode: orderInfo.shippingAddress?.zipcode || "",
             shippingProvince: orderInfo.shippingAddress?.province || "",
             shippingCity: orderInfo.shippingAddress?.city || "",
             shippingAddress: orderInfo.shippingAddress?.address || "",
-            shippingPhone: orderInfo.customer?.phone || "",
+            shippingNumber: orderInfo.shippingAddress?.number || "",
+            shippingFloor: orderInfo.shippingAddress?.floor || "",
+            shippingNeighborhood: orderInfo.shippingAddress?.locality || "",
+            shippingPhone: orderInfo.shippingAddress?.phone || orderInfo.customer?.phone || "",
+            // El nombre del destinatario en Tiendanube viene en un solo string "Nombre Apellido"
+            shippingRecipientName: (orderInfo.shippingAddress?.name || orderInfo.customer?.name || "").split(" ").slice(0, 1).join(" "),
+            shippingRecipientLastName: (orderInfo.shippingAddress?.name || orderInfo.customer?.name || "").split(" ").slice(1).join(" "),
             shippingMode: "domicilio",
             shippingMethodCode: "reenvio",
             shippingMethodName: orderInfo.shippingOptionName || orderInfo.shippingCarrier || "Reenvío",
