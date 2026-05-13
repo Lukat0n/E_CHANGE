@@ -53,3 +53,8 @@ next-env.d.ts
 
 # local scratch
 /tmp/
+
+# worker (Railway service) — node_modules and local session bootstrap
+/worker/node_modules
+/worker/session.json
+/worker/session.b64.txt
