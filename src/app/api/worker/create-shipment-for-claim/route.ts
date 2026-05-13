@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAuthenticated } from "@/lib/auth";
+import { sendTemplate, normalizePhoneAR, claimTypeForMessage } from "@/lib/whatsapp";
 
 // POST /api/worker/create-shipment-for-claim
 // Body: { claimId: string, submit?: boolean }
@@ -73,6 +74,9 @@ export async function POST(req: NextRequest) {
     const data = await res.json();
 
     // Si el robot creó el envío y obtuvo tracking, lo guardamos en el claim
+    // y disparamos WhatsApp automáticamente al cliente con el código.
+    let whatsappSent = false;
+    let whatsappError: string | null = null;
     if (data?.submitted && (data?.trackingCode || data?.postSubmitUrl)) {
       try {
         await prisma.claim.update({
@@ -86,9 +90,60 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         console.error("[create-shipment-for-claim] no se pudo guardar tracking:", e);
       }
+
+      // Mandar WhatsApp automáticamente con el tracking
+      if (data?.trackingCode || data?.trackingUrl) {
+        try {
+          const phone = normalizePhoneAR(claim.shippingPhone || claim.customerPhone);
+          if (phone) {
+            const trackingUrl =
+              data.trackingUrl ||
+              (data.trackingCode
+                ? `https://www.correoargentino.com.ar/formularios/e-commerce?id=${data.trackingCode}`
+                : null);
+
+            const trackingMsg = data.trackingCode
+              ? `Tu envío salió. Código de seguimiento: ${data.trackingCode}. Seguilo acá: ${trackingUrl}`
+              : `Tu envío salió. Seguilo acá: ${trackingUrl}`;
+
+            const result = await sendTemplate({
+              to: phone,
+              params: [
+                claim.customerName || "cliente",
+                claimTypeForMessage(claim.type),
+                String(claim.orderNumber),
+                "enviada",
+                trackingMsg,
+              ],
+            });
+
+            whatsappSent = result.ok;
+            whatsappError = result.ok ? null : (result.error || "Error desconocido");
+
+            await prisma.claim.update({
+              where: { id: claimId },
+              data: {
+                whatsappStatus: result.ok ? "sent" : "failed",
+                whatsappError,
+                whatsappSentAt: result.ok ? new Date() : null,
+              },
+            });
+
+            console.log(`[create-shipment-for-claim] WhatsApp con tracking: ${result.ok ? "OK" : "FAILED"} ${whatsappError || ""}`);
+          } else {
+            whatsappError = "Sin teléfono válido para mandar WhatsApp";
+          }
+        } catch (e) {
+          whatsappError = e instanceof Error ? e.message : "Error mandando WhatsApp";
+          console.error("[create-shipment-for-claim] error mandando WhatsApp:", e);
+        }
+      }
     }
 
-    return NextResponse.json(data, { status: res.status });
+    return NextResponse.json(
+      { ...data, whatsappSent, whatsappError },
+      { status: res.status }
+    );
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : "Error llamando al worker" },

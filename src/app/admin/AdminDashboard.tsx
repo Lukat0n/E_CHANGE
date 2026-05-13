@@ -183,7 +183,21 @@ export default function AdminDashboard({
       if (!res.ok || data.ok === false) {
         setRobotResult(`❌ ${data.error || `HTTP ${res.status}`}`);
       } else if (data.submitted) {
-        setRobotResult(`✅ Envío creado. URL: ${data.postSubmitUrl || "-"}`);
+        const trackingMsg = data.trackingCode ? ` · Tracking: ${data.trackingCode}` : "";
+        const waMsg = data.whatsappSent
+          ? " · 📱 WhatsApp enviado"
+          : data.whatsappError
+            ? ` · ⚠️ WhatsApp falló: ${data.whatsappError}`
+            : "";
+        setRobotResult(`✅ Envío creado${trackingMsg}${waMsg}`);
+        // Refrescar listado para mostrar el tracking en el modal
+        const refreshRes = await fetch("/api/claims");
+        if (refreshRes.ok) {
+          const all = await refreshRes.json();
+          setClaims(all);
+          const updated = all.find((c: Claim) => c.id === claimId);
+          if (updated && selectedClaim?.id === claimId) setSelectedClaim(updated);
+        }
       } else {
         setRobotResult(`🧪 Dry run del claim OK — ${data.url || "review"}`);
       }
