@@ -307,7 +307,10 @@ export async function inspectUrl(url) {
  *   }
  */
 export async function createShipment(input) {
-  const { mode, destZip, alto = 10, ancho = 15, profundidad = 10, peso, valor, recipient } = input || {};
+  // valor = 40000 por default: Envío Nube requiere "Valor declarado" en sucursal
+  // (y suma para casos de pérdida/seguro). Como no tenemos el valor real de cada
+  // paquete, fijamos un default razonable y seguimos.
+  const { mode, destZip, alto = 10, ancho = 15, profundidad = 10, peso = 500, valor = 40000, recipient } = input || {};
 
   if (!mode || (mode !== "domicilio" && mode !== "sucursal")) {
     throw new Error("input.mode debe ser 'domicilio' o 'sucursal'");
