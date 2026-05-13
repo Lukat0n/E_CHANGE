@@ -317,20 +317,35 @@ export default function HomePage() {
     }
   }, [deliveryMode, selectedShipping, selectedBranch]);
 
-  // Reenvío: cuando llegan las opciones, preseleccionar la que matchee el envío original
+  // Reenvío: pre-seleccionar SOLO si encontramos un match claro con el envío original.
+  // Antes había un fallback al primer carrier que volvía un default silencioso a e-pick
+  // (el más barato) cuando el match fallaba — eso pisaba la elección del cliente y
+  // terminaba cobrando el precio del carrier equivocado. Si no hay match limpio,
+  // dejamos la selección vacía y el cliente DEBE elegir explícitamente.
   useEffect(() => {
     if (claimType !== "reenvio") return;
     if (selectedShippingCode) return;
-    const originalName = (orderInfo?.shippingOptionName || "").toLowerCase();
     const all = [...domicilioOptions, ...sucursalOptions];
     if (all.length === 0) return;
-    const match = all.find((o) => originalName && o.name.toLowerCase().includes(originalName.split(" - ")[1]?.toLowerCase() || ""));
+
+    // Tokens del nombre del envío original (sin prefijo "Envío Nube" y sin sufijo "Llega...")
+    const originalRaw = (orderInfo?.shippingOptionName || "").toLowerCase();
+    if (!originalRaw) return;
+    const originalClean = originalRaw
+      .replace(/^env[ií]o\s*nube\s*-\s*/i, "")
+      .split(/\s*-\s*llega/i)[0]
+      .trim();
+    if (originalClean.length < 4) return; // demasiado genérico, no arriesgar
+
+    const match = all.find((o) => {
+      const oClean = o.name
+        .toLowerCase()
+        .replace(/^env[ií]o\s*nube\s*-\s*/i, "")
+        .split(/\s*-\s*llega/i)[0]
+        .trim();
+      return oClean === originalClean;
+    });
     if (match) setSelectedShippingCode(match.code);
-    else {
-      // fallback: el primer domicilio o el primero disponible
-      const def = domicilioOptions[0] || sucursalOptions[0];
-      if (def) setSelectedShippingCode(def.code);
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domicilioOptions, sucursalOptions, claimType]);
 
