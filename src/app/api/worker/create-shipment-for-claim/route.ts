@@ -96,15 +96,12 @@ export async function POST(req: NextRequest) {
         try {
           const phone = normalizePhoneAR(claim.shippingPhone || claim.customerPhone);
           if (phone) {
-            const trackingUrl =
-              data.trackingUrl ||
-              (data.trackingCode
-                ? `https://www.correoargentino.com.ar/formularios/e-commerce?id=${data.trackingCode}`
-                : null);
-
-            const trackingMsg = data.trackingCode
+            const trackingUrl = data.trackingUrl || null;
+            const trackingMsg = trackingUrl
               ? `Tu envío salió. Código de seguimiento: ${data.trackingCode}. Seguilo acá: ${trackingUrl}`
-              : `Tu envío salió. Seguilo acá: ${trackingUrl}`;
+              : data.trackingCode
+                ? `Tu envío salió. Código de seguimiento: ${data.trackingCode}. Podés rastrearlo desde la web del transportista.`
+                : `Tu envío salió.`;
 
             const result = await sendTemplate({
               to: phone,

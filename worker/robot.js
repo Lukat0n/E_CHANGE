@@ -523,73 +523,59 @@ export async function createShipment(input) {
             const allButtons = await collectAllButtons(page);
             console.log(`[createShipment] botones visibles en shipping-details:`, JSON.stringify(allButtons.slice(0, 30)));
 
-            console.log("[createShipment] buscando botón 'Generar'...");
+            // Intento 1: tal vez el envío ya tiene tracking (sin necesidad de "Generar")
+            let trackInfo = await extractTrackingFromAll(page);
+            if (trackInfo) {
+              trackingCode = trackInfo.code;
+              console.log(`[createShipment] tracking detectado sin Generar: ${trackingCode}`);
+            }
 
-            // Probar múltiples variantes del texto del botón en page + frames
-            const labels = [/^\s*Generar\s*$/i, /Generar etiqueta/i, /Generar\b/i, /Imprimir etiqueta/i, /Generate label/i];
-            let generarClicked = false;
-            const allTargets = [page, ...page.frames().filter((f) => f !== page.mainFrame() && !f.url().includes("validator"))];
+            // Si no había, buscamos el botón Generar
+            if (!trackingCode) {
+              console.log("[createShipment] buscando botón 'Generar'...");
 
-            outer: for (const target of allTargets) {
-              for (const label of labels) {
-                try {
-                  const btn = target.getByRole("button", { name: label }).first();
-                  if ((await btn.count()) > 0 && (await btn.isVisible().catch(() => false))) {
-                    const [newPage] = await Promise.all([
-                      page.context().waitForEvent("page", { timeout: 8000 }).catch(() => null),
-                      btn.click({ timeout: 5000 }),
-                    ]);
-                    generarClicked = true;
-                    console.log(`[createShipment] clickeé botón matching ${label} en ${target === page ? "page" : "frame"}`);
+              const labels = [/^\s*Generar\s*$/i, /Generar etiqueta/i, /Generar\b/i, /Imprimir etiqueta/i, /Generate label/i];
+              let generarClicked = false;
+              const allTargets = [page, ...page.frames().filter((f) => f !== page.mainFrame() && !f.url().includes("validator"))];
 
-                    if (newPage) {
-                      await newPage.waitForLoadState("domcontentloaded", { timeout: 30000 }).catch(() => {});
-                      await newPage.waitForTimeout(4000);
-                      const popupUrl = newPage.url();
-                      const popupContent = await newPage.content().catch(() => "");
-                      console.log(`[createShipment] popup URL: ${popupUrl}`);
-                      const trackingMatch = popupContent.match(/\b([A-Z]{2}\d{9}AR)\b/);
-                      if (trackingMatch) {
-                        trackingCode = trackingMatch[1];
-                        trackingUrl = `https://www.correoargentino.com.ar/formularios/e-commerce?id=${trackingCode}`;
-                        console.log(`[createShipment] tracking code (popup): ${trackingCode}`);
-                      } else {
-                        console.log(`[createShipment] no se encontró tracking code en popup. URL: ${popupUrl}`);
-                      }
-                    } else {
-                      // No popup — esperar y buscar en page actual
-                      await page.waitForTimeout(6000);
-                      const content = await page.content().catch(() => "");
-                      const trackingMatch = content.match(/\b([A-Z]{2}\d{9}AR)\b/);
-                      if (trackingMatch) {
-                        trackingCode = trackingMatch[1];
-                        trackingUrl = `https://www.correoargentino.com.ar/formularios/e-commerce?id=${trackingCode}`;
-                        console.log(`[createShipment] tracking code (page): ${trackingCode}`);
-                      } else {
-                        // Probar también en frames
-                        for (const f of page.frames()) {
-                          if (f === page.mainFrame() || f.url().includes("validator")) continue;
-                          const fc = await f.content().catch(() => "");
-                          const m = fc.match(/\b([A-Z]{2}\d{9}AR)\b/);
-                          if (m) {
-                            trackingCode = m[1];
-                            trackingUrl = `https://www.correoargentino.com.ar/formularios/e-commerce?id=${trackingCode}`;
-                            console.log(`[createShipment] tracking code (frame ${f.url()}): ${trackingCode}`);
-                            break;
-                          }
-                        }
-                      }
+              outer: for (const target of allTargets) {
+                for (const label of labels) {
+                  try {
+                    const btn = target.getByRole("button", { name: label }).first();
+                    if ((await btn.count()) > 0 && (await btn.isVisible().catch(() => false))) {
+                      await btn.click({ timeout: 5000 }).catch(() => {});
+                      generarClicked = true;
+                      console.log(`[createShipment] clickeé Generar matching ${label}`);
+                      break outer;
                     }
-                    break outer;
+                  } catch {}
+                }
+              }
+
+              if (!generarClicked) {
+                console.log("[createShipment] no encontré botón 'Generar'");
+              } else {
+                // Esperar a que aparezca el código en la página (puede tardar)
+                for (let i = 0; i < 10; i++) {
+                  await page.waitForTimeout(2000);
+                  trackInfo = await extractTrackingFromAll(page);
+                  if (trackInfo) {
+                    trackingCode = trackInfo.code;
+                    console.log(`[createShipment] tracking detectado tras Generar (intento ${i + 1}): ${trackingCode}`);
+                    break;
                   }
-                } catch (e) {
-                  console.log(`[createShipment] intento con ${label} falló:`, e?.message);
                 }
               }
             }
 
-            if (!generarClicked) {
-              console.log("[createShipment] no encontré botón 'Generar'. Botones visibles arriba.");
+            // Construir URL pública. Si parece Correo Argentino (XX#########AR) usamos su tracker.
+            // Si es otro formato (Envío Nube interno) no hay URL pública confiable, mandamos solo el código.
+            if (trackingCode) {
+              if (/^[A-Z]{2}\d{9}AR$/.test(trackingCode)) {
+                trackingUrl = `https://www.correoargentino.com.ar/formularios/e-commerce?id=${trackingCode}`;
+              } else {
+                trackingUrl = null;
+              }
             }
           } catch (err) {
             console.log("[createShipment] error generando etiqueta:", err?.message);
@@ -741,7 +727,38 @@ async function fillByPlaceholder(page, placeholderRegex, value) {
 }
 
 /**
- * Recolecta todos los botones visibles (page principal + frames + shadow DOM).
+ * Busca el código de seguimiento en page + todos los frames. Match estrategias:
+ *   1. Texto "Código de seguimiento: XXX" (formato visible en la UI)
+ *   2. Formato Correo Argentino: XX#########AR
+ *   3. Cualquier código alfanumérico de 8-20 chars cerca de la palabra "seguimiento"
+ *
+ * Devuelve { code } o null.
+ */
+async function extractTrackingFromAll(page) {
+  const targets = [page, ...page.frames().filter((f) => f !== page.mainFrame() && !f.url().includes("validator"))];
+  for (const t of targets) {
+    try {
+      const result = await t.evaluate(() => {
+        const txt = (document.body?.innerText || "").replace(/\s+/g, " ");
+        // 1. "Código de seguimiento: XXX"
+        let m = txt.match(/C[oó]digo de seguimiento[:\s]+([A-Z0-9-]{6,30})/i);
+        if (m) return m[1];
+        // 2. Correo Argentino formato
+        m = txt.match(/\b([A-Z]{2}\d{9}AR)\b/);
+        if (m) return m[1];
+        // 3. Tracking number generic con label "Tracking" o "T&T"
+        m = txt.match(/(?:Tracking|T&T|seguimiento)[:\s]*([A-Z0-9-]{8,30})/i);
+        if (m) return m[1];
+        return null;
+      });
+      if (result) return { code: result };
+    } catch {}
+  }
+  return null;
+}
+
+/**
+ * Recolecta todos los botones visibles (page principal + shadow DOM).
  * Útil para debug cuando no encontramos un botón que esperábamos.
  */
 async function collectAllButtons(page) {
