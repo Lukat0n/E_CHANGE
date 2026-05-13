@@ -458,10 +458,40 @@ export async function createShipment(input) {
     const paso4Inputs = await findAllInputs(page);
     console.log(`[createShipment] Paso 4 inputs: ${paso4Inputs.length}`);
 
-    const dump = await debugDump(page, `Pasos 1+2+3 completos. Mostrando Paso 4.`);
+    // Paso 4: si submit=true, clickeamos "Crear envío". Si no, dry run.
+    let submitted = false;
+    let postSubmitUrl = null;
+    if (input?.submit === true) {
+      try {
+        const btn = formFrame
+          .locator('button:has-text("Crear envío"):not([disabled])')
+          .first();
+        if ((await btn.count()) > 0) {
+          await btn.click({ timeout: 5000 });
+          submitted = true;
+          console.log("[createShipment] 'Crear envío' clickeado");
+          await page.waitForTimeout(8000);
+          postSubmitUrl = page.url();
+          console.log(`[createShipment] post-submit URL: ${postSubmitUrl}`);
+        } else {
+          console.log("[createShipment] no encontré botón 'Crear envío' habilitado");
+        }
+      } catch (err) {
+        console.log("[createShipment] error apretando 'Crear envío':", err?.message);
+      }
+    }
+
+    const dump = await debugDump(
+      page,
+      submitted
+        ? `Envío creado. URL final: ${postSubmitUrl}`
+        : `Pasos 1+2+3 completos. Paso 4 (review) listo. DRY RUN: no apretamos 'Crear envío'.`
+    );
     return {
       ...dump,
-      dryRun: true,
+      dryRun: !submitted,
+      submitted,
+      postSubmitUrl,
       filled,
       filledP3,
       continuarClicked,

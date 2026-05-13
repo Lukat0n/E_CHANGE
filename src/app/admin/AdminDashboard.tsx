@@ -135,6 +135,35 @@ export default function AdminDashboard({
     }
   }
 
+  async function createShipmentForClaim(claimId: string, submit: boolean) {
+    if (submit && !confirm("¿Crear envío REAL en Tiendanube? Esto va a generar la etiqueta y cobrar el costo del envío al comercio.")) {
+      return;
+    }
+    setUpdating(true);
+    setRobotResult(null);
+    setRobotDebug(null);
+    try {
+      const res = await fetch("/api/worker/create-shipment-for-claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claimId, submit }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) {
+        setRobotResult(`❌ ${data.error || `HTTP ${res.status}`}`);
+      } else if (data.submitted) {
+        setRobotResult(`✅ Envío creado. URL: ${data.postSubmitUrl || "-"}`);
+      } else {
+        setRobotResult(`🧪 Dry run del claim OK — ${data.url || "review"}`);
+      }
+      setRobotDebug(data);
+    } catch (err) {
+      setRobotResult(`❌ ${err instanceof Error ? err.message : "Error"}`);
+    } finally {
+      setUpdating(false);
+    }
+  }
+
   async function testCreateShipment() {
     setTestingRobot(true);
     setRobotResult(null);
@@ -767,6 +796,25 @@ export default function AdminDashboard({
                       </svg>
                       Copiar datos para Envío Nube
                     </button>
+                  )}
+
+                  {(selectedClaim.type === "cambio" || selectedClaim.type === "reenvio") && selectedClaim.shippingZipcode && selectedClaim.shippingMode !== "presencial" && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => createShipmentForClaim(selectedClaim.id, false)}
+                        disabled={updating}
+                        className="flex-1 border border-gray-400 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition disabled:opacity-50"
+                      >
+                        🧪 Test robot (dry run)
+                      </button>
+                      <button
+                        onClick={() => createShipmentForClaim(selectedClaim.id, true)}
+                        disabled={updating}
+                        className="flex-1 bg-purple-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-purple-700 transition disabled:opacity-50"
+                      >
+                        🤖 Crear envío con robot
+                      </button>
+                    </div>
                   )}
                   <div className="flex gap-2">
                     <button
