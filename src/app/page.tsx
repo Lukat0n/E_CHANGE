@@ -208,6 +208,10 @@ export default function HomePage() {
           zipcode: zip,
           variantId,
           quantity: orderInfo.products.find((p) => p.variantId)?.quantity || 1,
+          // Para reenvío incluimos los carriers a $0 (promo de envío gratis) porque
+          // queremos mostrarlos todos. El precio merchant lo derivamos del ratio
+          // con el shipping_cost_owner del envío original.
+          includeFree: claimType === "reenvio",
         }),
       });
       const data = await res.json();
@@ -246,23 +250,38 @@ export default function HomePage() {
     (o) => o.code === selectedShippingCode
   );
 
-  // Para reenvío: calculamos la proporción entre el costo real del envío original
-  // (shipping_cost_owner) y el precio del storefront para ese MISMO carrier. Después
-  // aplicamos esa proporción a TODOS los carriers para obtener sus precios "merchant"
-  // (lo que el comercio paga, no lo que paga el cliente en el storefront).
+  // Para reenvío: calculamos un ratio que convierte precios storefront → merchant.
+  //
+  // El precio en el storefront tiene el markup que Tiendanube le agrega al cliente
+  // final. Para obtener el precio merchant (lo que ve el comercio en Envío Nube)
+  // usamos: ratio = shipping_cost_owner / storefront_price_del_carrier_original.
+  //
+  // Si el carrier original aparece a $0 en el storefront (por promo de envío gratis),
+  // calculamos el ratio con cualquier otro carrier no-promo que esté disponible.
+  // Aproximación: asumimos que el markup% es similar entre carriers de la misma
+  // categoría (domicilio/sucursal).
   const reenvioMarkupRatio: number | null = (() => {
     if (claimType !== "reenvio") return null;
     if (!orderInfo?.shippingCostOwner || !orderInfo?.shippingOptionName) return null;
     const all = [...domicilioOptions, ...sucursalOptions];
     if (all.length === 0) return null;
     const originalNamePart = (orderInfo.shippingOptionName.split(" - ").pop() || "").toLowerCase().trim();
-    const matched = all.find((o) => originalNamePart && o.name.toLowerCase().includes(originalNamePart));
-    if (!matched || !matched.price) return null;
-    return orderInfo.shippingCostOwner / matched.price;
+    const originalMatch = all.find(
+      (o) => originalNamePart && o.name.toLowerCase().includes(originalNamePart)
+    );
+    // Usamos el original si tiene precio > 0
+    if (originalMatch && originalMatch.price > 0) {
+      return orderInfo.shippingCostOwner / originalMatch.price;
+    }
+    // Fallback: cualquier carrier con precio > 0 (ratio aproximado)
+    const fallback = all.find((o) => o.price > 0);
+    if (fallback) return orderInfo.shippingCostOwner / fallback.price;
+    return null;
   })();
 
   // Precio merchant estimado para un carrier (para reenvío). Si es el carrier original
-  // exacto, usamos el shipping_cost_owner directo (más preciso).
+  // exacto, usamos shipping_cost_owner directo. Si está a $0 (promo) y matchea con el
+  // original, también usamos shipping_cost_owner.
   function reenvioMerchantPrice(carrier: ShippingOption): number {
     if (claimType !== "reenvio") return carrier.price;
     if (orderInfo?.shippingOptionName && orderInfo.shippingCostOwner) {
@@ -271,10 +290,11 @@ export default function HomePage() {
         return orderInfo.shippingCostOwner;
       }
     }
-    if (reenvioMarkupRatio != null) {
+    if (reenvioMarkupRatio != null && carrier.price > 0) {
       return carrier.price * reenvioMarkupRatio;
     }
-    return carrier.price;
+    // Sin ratio y sin precio storefront → usar shipping_cost_owner como fallback
+    return orderInfo?.shippingCostOwner ?? carrier.price;
   }
 
   // Reenvío: auto-fetch opciones de envío usando el CP de la orden original.

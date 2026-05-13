@@ -132,7 +132,7 @@ async function fetchShippingOptions(storeUrl: string, zipcode: string, variantId
 }
 
 export async function POST(req: NextRequest) {
-  const { storeId, zipcode, variantId, quantity } = await req.json();
+  const { storeId, zipcode, variantId, quantity, includeFree } = await req.json();
 
   if (!zipcode || !variantId) {
     return NextResponse.json({ error: "zipcode y variantId son requeridos" }, { status: 400 });
@@ -157,11 +157,13 @@ export async function POST(req: NextRequest) {
     const options = await fetchShippingOptions(storeUrl, String(zipcode), Number(variantId), Number(quantity) || 1);
 
     // Filter out free-shipping promotions: cambios never go free, only first shipment does.
-    // The storefront /envio/ endpoint applies the "envío gratis" promo automatically; we strip it out.
-    const paid = options.filter((o) => o.price > 0);
+    // Para reenvío (includeFree=true) queremos ver TODOS los carriers (incluso los que
+    // aparecen a $0 por promo de envío gratis), porque cobramos via MP basándonos en
+    // shipping_cost_owner de la orden, no en el precio storefront.
+    const filtered = includeFree ? options : options.filter((o) => o.price > 0);
 
-    const domicilio = paid.filter((o) => o.type === "delivery");
-    const sucursal = paid.filter((o) => o.type === "pickup");
+    const domicilio = filtered.filter((o) => o.type === "delivery");
+    const sucursal = filtered.filter((o) => o.type === "pickup");
 
     return NextResponse.json({ domicilio, sucursal });
   } catch (err) {
