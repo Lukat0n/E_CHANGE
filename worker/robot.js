@@ -331,25 +331,58 @@ export async function createShipment(input) {
     // El SPA tarda en hidratar e ir renderizando inputs
     await page.waitForTimeout(8000);
 
+    // Enumerar inputs visibles para debug
+    const visibleInputs = await page.locator("input:visible").all();
+    const inputsInfo = await Promise.all(
+      visibleInputs.map((loc) =>
+        loc.evaluate((el) => ({
+          placeholder: el.placeholder || null,
+          name: el.name || null,
+          type: el.type || null,
+        })).catch(() => null)
+      )
+    );
+    console.log(`[createShipment] inputs visibles: ${inputsInfo.length}`, JSON.stringify(inputsInfo));
+
     const filled = {};
 
     if (mode === "domicilio") {
-      filled.codigoPostal = await typeIntoInput(page, /codigo postal|código postal/i, String(destZip), { byPlaceholder: true });
-      filled.alto = await typeIntoInput(page, /^alto$/i, String(alto));
-      filled.ancho = await typeIntoInput(page, /^ancho$/i, String(ancho));
-      filled.profundidad = await typeIntoInput(page, /^profundidad$/i, String(profundidad));
-      if (peso) filled.peso = await typeIntoInput(page, /^peso$/i, String(peso));
-      if (valor) filled.valor = await typeIntoInput(page, /monto total/i, String(valor));
+      filled.codigoPostal = await fillByPlaceholder(page, /c[oó]digo postal/i, String(destZip));
+
+      // Alto/Ancho/Profundidad: 3 inputs con placeholder "30" en ese orden
+      const dim30 = page.locator('input[placeholder="30"]:visible');
+      const dim30Count = await dim30.count();
+      if (dim30Count >= 3) {
+        await dim30.nth(0).fill(String(alto)).catch(() => {});
+        await dim30.nth(1).fill(String(ancho)).catch(() => {});
+        await dim30.nth(2).fill(String(profundidad)).catch(() => {});
+        filled.alto = { found: true, value: alto };
+        filled.ancho = { found: true, value: ancho };
+        filled.profundidad = { found: true, value: profundidad };
+      } else {
+        console.log(`[createShipment] esperaba 3 inputs placeholder="30", encontré ${dim30Count}`);
+        filled.alto = filled.ancho = filled.profundidad = { found: false };
+      }
+
+      if (peso) filled.peso = await fillByPlaceholder(page, /^peso$/i, String(peso));
+      if (valor) filled.valor = await fillByPlaceholder(page, /^\$$/, String(valor));
     } else {
-      if (recipient.nombre) filled.nombre = await typeIntoInput(page, /^nombre$/i, recipient.nombre);
-      if (recipient.apellido) filled.apellido = await typeIntoInput(page, /^apellido$/i, recipient.apellido);
-      if (recipient.email) filled.email = await typeIntoInput(page, /^email/i, recipient.email);
-      if (recipient.telefono) filled.telefono = await typeIntoInput(page, /tel[eé]fono/i, recipient.telefono);
-      filled.alto = await typeIntoInput(page, /^alto$/i, String(alto));
-      filled.ancho = await typeIntoInput(page, /^ancho$/i, String(ancho));
-      filled.profundidad = await typeIntoInput(page, /^profundidad$/i, String(profundidad));
-      if (peso) filled.peso = await typeIntoInput(page, /^peso$/i, String(peso));
-      if (valor) filled.valor = await typeIntoInput(page, /valor declarado/i, String(valor));
+      // Para sucursal, los labels son Nombre/Apellido/Email/Teléfono
+      if (recipient.nombre) filled.nombre = await fillByLabelOrPlaceholder(page, /nombre/i, recipient.nombre);
+      if (recipient.apellido) filled.apellido = await fillByLabelOrPlaceholder(page, /apellido/i, recipient.apellido);
+      if (recipient.email) filled.email = await fillByLabelOrPlaceholder(page, /email/i, recipient.email);
+      if (recipient.telefono) filled.telefono = await fillByLabelOrPlaceholder(page, /tel[eé]fono/i, recipient.telefono);
+
+      const dim30 = page.locator('input[placeholder="30"]:visible');
+      const dim30Count = await dim30.count();
+      if (dim30Count >= 3) {
+        await dim30.nth(0).fill(String(alto)).catch(() => {});
+        await dim30.nth(1).fill(String(ancho)).catch(() => {});
+        await dim30.nth(2).fill(String(profundidad)).catch(() => {});
+        filled.alto = filled.ancho = filled.profundidad = { found: true };
+      }
+      if (peso) filled.peso = await fillByPlaceholder(page, /^peso$/i, String(peso));
+      if (valor) filled.valor = await fillByPlaceholder(page, /valor declarado|^\$$/i, String(valor));
     }
 
     // DRY RUN: no apretamos Continuar. Tomamos screenshot del estado actual.
@@ -367,12 +400,52 @@ export async function createShipment(input) {
 }
 
 /**
- * Intenta llenar un input ubicándolo por:
- * 1. getByLabel (si el HTML tiene <label for="...">)
- * 2. getByPlaceholder
- * 3. xpath: label cercano seguido de input
- *
- * Devuelve true si llenó, false si no encontró el campo.
+ * Llena un input visible cuyo placeholder matchea con un regex.
+ */
+async function fillByPlaceholder(page, placeholderRegex, value) {
+  // Buscamos entre todos los inputs visibles el que tenga placeholder que matchea
+  const inputs = page.locator("input:visible");
+  const count = await inputs.count();
+  for (let i = 0; i < count; i++) {
+    const el = inputs.nth(i);
+    const ph = await el.getAttribute("placeholder").catch(() => null);
+    if (ph && placeholderRegex.test(ph)) {
+      try {
+        await el.fill(value);
+        return { found: true, value, placeholder: ph };
+      } catch (err) {
+        return { found: false, value, error: err?.message };
+      }
+    }
+  }
+  return { found: false, value };
+}
+
+/**
+ * Intenta llenar buscando por label asociado, placeholder o role textbox.
+ */
+async function fillByLabelOrPlaceholder(page, textRegex, value) {
+  // Estrategia 1: getByLabel
+  let input = page.getByLabel(textRegex).first();
+  if ((await input.count()) > 0 && (await input.isVisible().catch(() => false))) {
+    try {
+      await input.fill(value);
+      return { found: true, value, strategy: "label" };
+    } catch {}
+  }
+  // Estrategia 2: getByPlaceholder
+  input = page.getByPlaceholder(textRegex).first();
+  if ((await input.count()) > 0 && (await input.isVisible().catch(() => false))) {
+    try {
+      await input.fill(value);
+      return { found: true, value, strategy: "placeholder" };
+    } catch {}
+  }
+  return { found: false, value };
+}
+
+/**
+ * Helper legacy — mantenemos para no romper otros call sites.
  */
 async function typeIntoInput(page, textRegex, value, { byPlaceholder = false } = {}) {
   // Estrategia 1: getByLabel (Tiendanube probablemente usa esto)
