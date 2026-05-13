@@ -47,6 +47,13 @@ async function loginToTiendanube(page, targetUrl = "https://gelica.mitiendanube.
   const pass = process.env.TIENDANUBE_PASS;
   if (!user || !pass) throw new Error("Faltan TIENDANUBE_USER / TIENDANUBE_PASS");
 
+  // Loguear todos los cambios de URL para debug
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame()) {
+      console.log("[nav]", frame.url());
+    }
+  });
+
   // Navegamos al destino. Tiendanube nos va a redirigir a la pantalla de login
   // con el parámetro login_to seteado, lo que asegura que después de loguear
   // la cadena de redirects nos lleve de vuelta y setee cookies cross-subdomain.
@@ -155,26 +162,23 @@ async function loginToTiendanube(page, targetUrl = "https://gelica.mitiendanube.
     await page.waitForTimeout(2500);
   }
 
-  // Esperamos hasta 30s a que la cadena natural de redirects nos lleve al subdominio.
+  // Esperamos hasta 60s a que la cadena natural de redirects nos lleve al subdominio
+  // mitiendanube.com. La página /auth/token tiene JS que hace POST/redirect al store
+  // subdomain con un token de un solo uso. Damos tiempo a que se ejecute.
   let waits = 0;
-  while (
-    !page.url().includes("gelica.mitiendanube.com") &&
-    !page.url().includes("/dashboard") &&
-    (page.url().includes("tiendanube.com")) &&
-    waits < 20
-  ) {
+  while (!page.url().includes("mitiendanube.com") && waits < 40) {
     await page.waitForTimeout(1500);
     waits++;
+    if (waits % 5 === 0) console.log(`[login] esperando redirect, URL actual: ${page.url()}`);
   }
 
-  // Si seguimos en www.tiendanube.com (o /auth/token quedó atascado),
-  // visitamos manualmente el login_to capturado para forzar la cadena.
-  if (loginToUrl && !page.url().includes("gelica.mitiendanube.com")) {
-    console.log("[login] forzando navegación a login_to:", loginToUrl);
-    await page.goto(loginToUrl, { waitUntil: "domcontentloaded", timeout: 30000 }).catch((e) =>
-      console.log("[login] goto login_to falló:", e?.message)
-    );
-    await page.waitForTimeout(4000);
+  // Si después de 60s seguimos en www.tiendanube.com, capturamos el contenido
+  // para ver qué hay en /auth/token y debuggear.
+  if (!page.url().includes("mitiendanube.com")) {
+    const stuckUrl = page.url();
+    const html = await page.content().catch(() => "");
+    console.log("[login] STUCK at:", stuckUrl);
+    console.log("[login] HTML snippet:", html.slice(0, 2000));
   }
 
   if (page.url().includes("/login") || page.url().includes("/auth/otp")) {
