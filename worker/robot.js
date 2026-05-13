@@ -1,6 +1,7 @@
 import { chromium as chromiumExtra } from "playwright-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { getLatestTiendanubeOtp } from "./gmail.js";
+import zlib from "zlib";
 
 // Disfraz contra detección de browser automatizado (oculta navigator.webdriver,
 // fingerprints de canvas, etc.). Tiendanube nos servía un HTML vacío sin esto.
@@ -35,7 +36,14 @@ async function launchBrowser() {
   const sessionB64 = process.env.SESSION_STATE_B64;
   if (sessionB64) {
     try {
-      const json = Buffer.from(sessionB64, "base64").toString("utf-8");
+      const buf = Buffer.from(sessionB64, "base64");
+      // Probamos primero gzipped (formato nuevo del bootstrap). Si falla, plain base64.
+      let json;
+      try {
+        json = zlib.gunzipSync(buf).toString("utf-8");
+      } catch {
+        json = buf.toString("utf-8");
+      }
       contextOptions.storageState = JSON.parse(json);
       console.log("[browser] sesión persistente cargada (cookies:",
         contextOptions.storageState?.cookies?.length || 0, ")");

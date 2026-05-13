@@ -15,6 +15,7 @@
 import { chromium } from "playwright";
 import fs from "fs";
 import readline from "readline";
+import zlib from "zlib";
 
 const TARGET = "https://gelica.mitiendanube.com/admin";
 
@@ -66,31 +67,46 @@ async function main() {
   console.log(`\n✅ Detectado en: ${currentUrl}`);
   console.log("Guardando sesión...");
 
-  const state = await context.storageState();
+  const fullState = await context.storageState();
 
-  // Validamos que tenga cookies útiles
-  const mtuCookies = state.cookies.filter((c) =>
-    c.domain.includes("mitiendanube.com") || c.domain.includes("tiendanube.com")
-  );
-  console.log(`   Cookies relevantes: ${mtuCookies.length}`);
-  if (mtuCookies.length === 0) {
+  // FILTRAMOS para mantener solo lo que importa (Tiendanube/mitiendanube).
+  // El estado completo trae cookies de HubSpot, LinkedIn, FB, Google, etc.
+  // que no necesitamos y hacen que el base64 exceda 32KB en Railway.
+  const isRelevantDomain = (d) =>
+    d.includes("tiendanube.com") || d.includes("mitiendanube.com");
+
+  const filteredState = {
+    cookies: fullState.cookies.filter((c) => isRelevantDomain(c.domain || "")),
+    origins: (fullState.origins || []).filter((o) =>
+      isRelevantDomain(o.origin || "")
+    ),
+  };
+
+  console.log(`   Cookies originales: ${fullState.cookies.length}`);
+  console.log(`   Cookies filtradas (Tiendanube): ${filteredState.cookies.length}`);
+  console.log(`   Origins con localStorage: ${filteredState.origins.length}`);
+
+  if (filteredState.cookies.length === 0) {
     console.error("⚠️  No encontré cookies de Tiendanube. Algo salió mal en el login.");
     await browser.close();
     process.exit(1);
   }
 
-  // Guardar en archivo JSON
+  // Guardar JSON completo como backup
   const jsonPath = "session.json";
-  fs.writeFileSync(jsonPath, JSON.stringify(state, null, 2));
+  fs.writeFileSync(jsonPath, JSON.stringify(filteredState, null, 2));
 
-  // Guardar base64 para pegar en Railway
-  const b64 = Buffer.from(JSON.stringify(state)).toString("base64");
+  // Comprimir con gzip y luego base64 para que entre en 32KB
+  const json = JSON.stringify(filteredState);
+  const gzipped = zlib.gzipSync(json);
+  const b64 = gzipped.toString("base64");
   const b64Path = "session.b64.txt";
   fs.writeFileSync(b64Path, b64);
 
+  const ratio = ((1 - b64.length / json.length) * 100).toFixed(1);
   console.log(`\n✅ Sesión guardada en:`);
-  console.log(`   - ${jsonPath} (${JSON.stringify(state).length} bytes, formato JSON)`);
-  console.log(`   - ${b64Path} (${b64.length} caracteres base64)`);
+  console.log(`   - ${jsonPath} (${json.length} bytes JSON filtrado)`);
+  console.log(`   - ${b64Path} (${b64.length} caracteres base64+gzip, ${ratio}% más chico)`);
 
   console.log(`\n--- PRÓXIMO PASO ---`);
   console.log(`1. Abrí el archivo "${b64Path}" en cualquier editor.`);
