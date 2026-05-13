@@ -942,41 +942,88 @@ async function selectByVisibleText(frame, optionText) {
 }
 
 /**
+ * Extrae el nombre "limpio" del carrier de un texto del storefront.
+ * Ejemplos:
+ *   "Envío Nube - Correo Argentino Clásico a domicilio - Llega entre el viernes 15/05..."
+ *     → "correo argentino clásico a domicilio"
+ *   "Envio Nube - Entrega rápida a domicilio - Llega entre..."
+ *     → "entrega rápida a domicilio"
+ *   "Correo Argentino Clásico a domicilio"
+ *     → "correo argentino clásico a domicilio"
+ */
+function extractCarrierKey(name) {
+  if (!name) return null;
+  let key = String(name).trim();
+  // Quitar prefijo "Envío Nube - " o "Envio Nube - "
+  key = key.replace(/^env[ií]o\s*nube\s*-\s*/i, "");
+  // Quitar todo después de " - Llega" (texto de la fecha de llegada)
+  const llegaIdx = key.search(/\s*-\s*llega/i);
+  if (llegaIdx > 0) key = key.slice(0, llegaIdx);
+  return key.toLowerCase().trim();
+}
+
+/**
  * En el Paso 2 ("Seleccionar medio de envío"), elige un carrier:
- *   - Si preference está, busca un radio cuyo label cercano contenga ese texto
- *     (case insensitive). Ej: "Correo Argentino Clásico".
- *   - Si no, clickea el primer radio visible (el más barato, Tiendanube ordena
- *     ascendente por precio).
+ *   - Si preference está, busca un radio cuyo label cercano contenga el nombre
+ *     del carrier (después de limpiar prefijo "Envío Nube" y sufijo "Llega entre...").
+ *   - Si no encuentra match, clickea el primer radio visible (el más barato).
  *
  * Trabaja dentro del iframe del form. Dispara click + change para que React
  * registre la selección.
  */
 async function pickCarrierRadio(frame, preference = null) {
+  const cleanedPreference = extractCarrierKey(preference);
+  console.log(`[pickCarrierRadio] preference original: ${preference}`);
+  console.log(`[pickCarrierRadio] preference limpia: ${cleanedPreference}`);
+
   return frame.evaluate(
-    ({ preference }) => {
+    ({ preference, cleanedPreference }) => {
       const radios = Array.from(document.querySelectorAll('input[name="deliveryOptionId"]'));
       const visible = radios.filter((r) => r.offsetParent || r.getClientRects?.().length);
       if (visible.length === 0) return { found: false, reason: "sin radios visibles" };
 
+      // Helper: leer el texto del label asociado al radio (subiendo por padres)
+      function radioLabelText(r) {
+        let probe = r.parentElement;
+        for (let i = 0; i < 6 && probe; i++) {
+          const t = (probe.textContent || "").trim();
+          // El primer texto razonable (>3 chars y <200) lo tomamos como label
+          if (t.length > 3 && t.length < 300) return t.toLowerCase();
+          probe = probe.parentElement;
+        }
+        return "";
+      }
+
+      // Listar todos los radios con su texto cercano para debug
+      const radiosInfo = visible.map((r) => ({ value: r.value, label: radioLabelText(r).slice(0, 100) }));
+
       let target = null;
-      if (preference) {
-        const needle = preference.toLowerCase();
+      let matchType = null;
+      if (cleanedPreference) {
+        // Intento 1: match exacto del nombre limpio dentro del texto del radio
         for (const r of visible) {
-          // El label/texto del carrier está en algún ancestro o sibling del radio
-          let probe = r.parentElement;
-          let txt = "";
-          for (let i = 0; i < 6 && probe; i++) {
-            txt = (probe.textContent || "").toLowerCase();
-            if (txt.includes(needle)) {
-              target = r;
-              break;
-            }
-            probe = probe.parentElement;
+          if (radioLabelText(r).includes(cleanedPreference)) {
+            target = r;
+            matchType = "exacto";
+            break;
           }
-          if (target) break;
         }
       }
-      if (!target) target = visible[0];
+      if (!target && preference) {
+        // Intento 2: match del nombre original completo (fallback)
+        const fullNeedle = preference.toLowerCase();
+        for (const r of visible) {
+          if (radioLabelText(r).includes(fullNeedle)) {
+            target = r;
+            matchType = "fullName";
+            break;
+          }
+        }
+      }
+      if (!target) {
+        target = visible[0];
+        matchType = "fallback-primero";
+      }
 
       target.click();
       target.dispatchEvent(new Event("change", { bubbles: true }));
@@ -984,11 +1031,13 @@ async function pickCarrierRadio(frame, preference = null) {
         found: true,
         value: target.value,
         id: target.id,
-        matchedPreference: preference || null,
+        matchType,
+        matchedPreference: cleanedPreference || preference || null,
         totalVisible: visible.length,
+        availableRadios: radiosInfo,
       };
     },
-    { preference }
+    { preference, cleanedPreference }
   );
 }
 
