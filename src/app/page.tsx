@@ -220,12 +220,9 @@ export default function HomePage() {
       if (data._debug) console.log("[shipping debug]", data._debug);
       setDomicilioOptions(data.domicilio || []);
       setSucursalOptions(data.sucursal || []);
-      // Auto-select cheapest option of current mode
-      const initial = deliveryMode === "domicilio" ? data.domicilio : data.sucursal;
-      if (initial && initial.length > 0) {
-        const cheapest = [...initial].sort((a: ShippingOption, b: ShippingOption) => a.price - b.price)[0];
-        setSelectedShippingCode(cheapest.code);
-      }
+      // No auto-seleccionamos acá: dejamos que los useEffects abajo manejen
+      // la selección inicial según claimType (reenvío matchea original,
+      // cambio elige más barato). Así evitamos pisar selecciones del cliente.
     } catch (err) {
       setShippingError(err instanceof Error ? err.message : "Error calculando el envío");
     } finally {
@@ -233,20 +230,33 @@ export default function HomePage() {
     }
   }
 
-  // When switching delivery mode, auto-select cheapest option of that group.
-  // Skipped for "presencial" since there's no carrier option to pick.
+  // Al cambiar de modo: si la selección actual no está en la nueva lista, sólo
+  // la limpiamos. NO auto-elegimos más barato (eso era el bug que reseteaba la
+  // elección del cliente cuando cambiaba de tab y volvía).
+  // Para cambio + sin selección inicial, hay un useEffect dedicado abajo.
   useEffect(() => {
     if (deliveryMode === "presencial") return;
     const list = deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions;
-    if (list.length > 0) {
-      const currentIsInList = list.some((o) => o.code === selectedShippingCode);
-      if (!currentIsInList) {
-        const cheapest = [...list].sort((a, b) => a.price - b.price)[0];
-        setSelectedShippingCode(cheapest.code);
-      }
+    if (list.length === 0) return;
+    const currentIsInList = list.some((o) => o.code === selectedShippingCode);
+    if (!currentIsInList && selectedShippingCode) {
+      setSelectedShippingCode("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deliveryMode, domicilioOptions, sucursalOptions]);
+
+  // Cambio: auto-seleccionar el más barato del modo actual SOLO si no hay
+  // ninguna selección. Esto da un default conveniente sin pisar elecciones.
+  useEffect(() => {
+    if (claimType !== "cambio") return;
+    if (selectedShippingCode) return;
+    if (deliveryMode === "presencial") return;
+    const list = deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions;
+    if (list.length === 0) return;
+    const cheapest = [...list].sort((a, b) => a.price - b.price)[0];
+    setSelectedShippingCode(cheapest.code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claimType, deliveryMode, domicilioOptions, sucursalOptions, selectedShippingCode]);
 
   const selectedShipping: ShippingOption | undefined = [...domicilioOptions, ...sucursalOptions].find(
     (o) => o.code === selectedShippingCode
