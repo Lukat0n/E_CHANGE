@@ -262,14 +262,33 @@ export default function HomePage() {
     (o) => o.code === selectedShippingCode
   );
 
+  // Normaliza el nombre de un carrier: saca "Envío Nube - " y " - Llega..."
+  // para poder comparar "Correo Argentino Clásico a domicilio" entre la orden
+  // original y la respuesta del storefront.
+  function carrierKey(name: string | null | undefined): string {
+    if (!name) return "";
+    return name
+      .toLowerCase()
+      .replace(/^env[ií]o\s*nube\s*-\s*/i, "")
+      .split(/\s*-\s*llega/i)[0]
+      .trim();
+  }
+
   // Para reenvío usamos el precio del storefront directo + 6% para MP.
-  // Es lo que el cliente pagaría en un checkout normal de Tiendanube + nuestra
-  // comisión silenciosa. Si el storefront retorna $0 (promo de envío gratis),
-  // usamos el shipping_cost_owner de la orden original como fallback.
+  // Si el storefront retorna $0 (promo de envío gratis), SOLO usamos
+  // shipping_cost_owner como fallback si el carrier matchea el original
+  // (porque eso es lo que el merchant realmente pagó). Si es un carrier
+  // distinto, no tenemos un precio confiable → devolvemos 0 y lo filtramos
+  // de la lista. Antes el fallback ciego pisaba el precio de Clásico con
+  // el de e-pick cuando Clásico venía a $0 por promo.
   function reenvioCarrierPrice(carrier: ShippingOption): number {
     if (claimType !== "reenvio") return carrier.price;
     if (carrier.price > 0) return carrier.price;
-    return orderInfo?.shippingCostOwner ?? 0;
+    const origKey = carrierKey(orderInfo?.shippingOptionName);
+    if (origKey && carrierKey(carrier.name) === origKey) {
+      return orderInfo?.shippingCostOwner ?? 0;
+    }
+    return 0;
   }
 
   // Reenvío: auto-fetch opciones de envío usando el CP de la orden original.
@@ -327,24 +346,9 @@ export default function HomePage() {
     if (selectedShippingCode) return;
     const all = [...domicilioOptions, ...sucursalOptions];
     if (all.length === 0) return;
-
-    // Tokens del nombre del envío original (sin prefijo "Envío Nube" y sin sufijo "Llega...")
-    const originalRaw = (orderInfo?.shippingOptionName || "").toLowerCase();
-    if (!originalRaw) return;
-    const originalClean = originalRaw
-      .replace(/^env[ií]o\s*nube\s*-\s*/i, "")
-      .split(/\s*-\s*llega/i)[0]
-      .trim();
-    if (originalClean.length < 4) return; // demasiado genérico, no arriesgar
-
-    const match = all.find((o) => {
-      const oClean = o.name
-        .toLowerCase()
-        .replace(/^env[ií]o\s*nube\s*-\s*/i, "")
-        .split(/\s*-\s*llega/i)[0]
-        .trim();
-      return oClean === originalClean;
-    });
+    const origKey = carrierKey(orderInfo?.shippingOptionName);
+    if (!origKey || origKey.length < 4) return;
+    const match = all.find((o) => carrierKey(o.name) === origKey);
     if (match) setSelectedShippingCode(match.code);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domicilioOptions, sucursalOptions, claimType]);
@@ -1447,7 +1451,12 @@ export default function HomePage() {
                     </div>
 
                     <div className="space-y-2">
-                      {(deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions).map((opt) => (
+                      {/* Filtramos carriers a precio 0 (storefront promo sin fallback aplicable):
+                          no podemos cobrarlos confiablemente. Los carriers que matchean al
+                          carrier original sí caen al fallback de shipping_cost_owner y se muestran. */}
+                      {(deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions)
+                        .filter((opt) => reenvioCarrierPrice(opt) > 0)
+                        .map((opt) => (
                         <label
                           key={opt.code}
                           className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition ${
