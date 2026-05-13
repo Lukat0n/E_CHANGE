@@ -246,6 +246,37 @@ export default function HomePage() {
     (o) => o.code === selectedShippingCode
   );
 
+  // Para reenvío: calculamos la proporción entre el costo real del envío original
+  // (shipping_cost_owner) y el precio del storefront para ese MISMO carrier. Después
+  // aplicamos esa proporción a TODOS los carriers para obtener sus precios "merchant"
+  // (lo que el comercio paga, no lo que paga el cliente en el storefront).
+  const reenvioMarkupRatio: number | null = (() => {
+    if (claimType !== "reenvio") return null;
+    if (!orderInfo?.shippingCostOwner || !orderInfo?.shippingOptionName) return null;
+    const all = [...domicilioOptions, ...sucursalOptions];
+    if (all.length === 0) return null;
+    const originalNamePart = (orderInfo.shippingOptionName.split(" - ").pop() || "").toLowerCase().trim();
+    const matched = all.find((o) => originalNamePart && o.name.toLowerCase().includes(originalNamePart));
+    if (!matched || !matched.price) return null;
+    return orderInfo.shippingCostOwner / matched.price;
+  })();
+
+  // Precio merchant estimado para un carrier (para reenvío). Si es el carrier original
+  // exacto, usamos el shipping_cost_owner directo (más preciso).
+  function reenvioMerchantPrice(carrier: ShippingOption): number {
+    if (claimType !== "reenvio") return carrier.price;
+    if (orderInfo?.shippingOptionName && orderInfo.shippingCostOwner) {
+      const originalNamePart = (orderInfo.shippingOptionName.split(" - ").pop() || "").toLowerCase().trim();
+      if (originalNamePart && carrier.name.toLowerCase().includes(originalNamePart)) {
+        return orderInfo.shippingCostOwner;
+      }
+    }
+    if (reenvioMarkupRatio != null) {
+      return carrier.price * reenvioMarkupRatio;
+    }
+    return carrier.price;
+  }
+
   // Reenvío: auto-fetch opciones de envío usando el CP de la orden original.
   // El cliente puede elegir cualquier modalidad disponible (e-pick, Correo, sucursal).
   useEffect(() => {
@@ -367,12 +398,12 @@ export default function HomePage() {
             shippingMode: deliveryMode === "sucursal" ? "sucursal" : "domicilio",
             shippingMethodCode: selectedShipping?.code || "reenvio",
             shippingMethodName: selectedShipping?.name || orderInfo.shippingOptionName || orderInfo.shippingCarrier || "Reenvío",
-            // Cobrar el costo real del envío original (shipping_cost_owner) + 6%.
-            // No usamos selectedShipping.price porque ese precio incluye el markup
-            // que Tiendanube agrega al cliente final (no es lo que paga el comercio).
-            shippingCost: orderInfo.shippingCostOwner != null
-              ? publicPrice(orderInfo.shippingCostOwner)
-              : (selectedShipping ? publicPrice(selectedShipping.price) : null),
+            // Costo merchant calculado para el carrier elegido + 6% MP surcharge.
+            // reenvioMerchantPrice usa el ratio derivado del shipping_cost_owner de
+            // la orden original para convertir el precio del storefront a merchant.
+            shippingCost: selectedShipping
+              ? publicPrice(reenvioMerchantPrice(selectedShipping))
+              : (orderInfo.shippingCostOwner != null ? publicPrice(orderInfo.shippingCostOwner) : null),
           }),
           ...(claimType === "cambio" && {
             // For presencial we don't collect CP/dirección
@@ -1243,8 +1274,7 @@ export default function HomePage() {
             <div className="space-y-5">
               <h2 className="text-xl font-semibold text-gray-900">Reenvío del pedido</h2>
 
-              {/* Resumen de precio - usamos el costo del envío original de la orden,
-                  NO los precios del storefront (que tienen markup de Tiendanube). */}
+              {/* Resumen de precio: usa el precio merchant calculado para el carrier elegido */}
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
                 <div className="flex justify-between text-sm text-gray-700">
                   <span>Modalidad elegida:</span>
@@ -1253,14 +1283,11 @@ export default function HomePage() {
                 <div className="border-t border-blue-200 pt-2 flex justify-between">
                   <span className="font-semibold text-gray-900">Costo del reenvío</span>
                   <span className="text-2xl font-bold text-gray-900">
-                    {orderInfo?.shippingCostOwner != null
-                      ? `$${publicPrice(orderInfo.shippingCostOwner).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      : selectedShipping
-                        ? `$${publicPrice(selectedShipping.price).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                        : "—"}
+                    {selectedShipping
+                      ? `$${publicPrice(reenvioMerchantPrice(selectedShipping)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : "—"}
                   </span>
                 </div>
-                <p className="text-xs text-gray-500">Es el mismo costo del envío original de tu compra.</p>
               </div>
 
               {/* Dirección destino — para domicilio: misma de la orden o custom */}
@@ -1429,8 +1456,12 @@ export default function HomePage() {
                             className="mt-1"
                           />
                           <div className="flex-1">
-                            <span className="text-sm font-medium text-gray-900">{opt.name}</span>
-                            {/* Precios individuales del carrier ocultados — todos los carriers cobran lo mismo (el costo del envío original) */}
+                            <div className="flex justify-between gap-2">
+                              <span className="text-sm font-medium text-gray-900">{opt.name}</span>
+                              <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">
+                                ${publicPrice(reenvioMerchantPrice(opt)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
                             {opt.branches && opt.branches.length > 0 && (
                               <details className="mt-1.5">
                                 <summary className="text-xs text-blue-600 cursor-pointer">Ver sucursales ({opt.branches.length})</summary>
