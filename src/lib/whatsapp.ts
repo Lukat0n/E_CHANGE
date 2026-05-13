@@ -48,7 +48,7 @@ interface MetaApiError {
 export async function sendTemplate({
   to,
   templateName = process.env.WHATSAPP_TEMPLATE_NAME || "estado_solicitud",
-  language = "es",
+  language = process.env.WHATSAPP_TEMPLATE_LANGUAGE || "es_AR",
   params,
 }: SendTemplateInput): Promise<{ ok: boolean; error?: string }> {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
