@@ -35,6 +35,9 @@ interface Claim {
   whatsappStatus: string | null;
   whatsappError: string | null;
   whatsappSentAt: string | Date | null;
+  shipmentTrackingCode: string | null;
+  shipmentTrackingUrl: string | null;
+  shipmentRobotUrl: string | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }
@@ -135,6 +138,31 @@ export default function AdminDashboard({
       setRobotResult(`❌ ${err instanceof Error ? err.message : "Error"}`);
     } finally {
       setTestingRobot(false);
+    }
+  }
+
+  async function sendTrackingWhatsapp(claimId: string) {
+    setUpdating(true);
+    try {
+      const res = await fetch(`/api/claims/${claimId}/send-tracking`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        alert(`✅ WhatsApp con tracking enviado.\n${data.trackingUrl ? `Link: ${data.trackingUrl}` : ""}`);
+        // Refrescar claim
+        const refreshRes = await fetch("/api/claims");
+        if (refreshRes.ok) {
+          const all = await refreshRes.json();
+          setClaims(all);
+          const updated = all.find((c: Claim) => c.id === claimId);
+          if (updated && selectedClaim?.id === claimId) setSelectedClaim(updated);
+        }
+      } else {
+        alert(`❌ ${data.error || "Error enviando WhatsApp"}`);
+      }
+    } catch (err) {
+      alert(`❌ ${err instanceof Error ? err.message : "Error"}`);
+    } finally {
+      setUpdating(false);
     }
   }
 
@@ -609,6 +637,27 @@ export default function AdminDashboard({
                     </span>
                   )}
                 </div>
+
+                {selectedClaim.shipmentTrackingCode && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm space-y-1">
+                    <p className="font-medium text-gray-900">📦 Envío generado por robot</p>
+                    <p><span className="font-medium text-gray-700">Tracking:</span> <span className="font-mono text-xs">{selectedClaim.shipmentTrackingCode}</span></p>
+                    {selectedClaim.shipmentTrackingUrl && (
+                      <p>
+                        <a href={selectedClaim.shipmentTrackingUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline text-xs">
+                          Ver tracking en Correo Argentino →
+                        </a>
+                      </p>
+                    )}
+                    <button
+                      onClick={() => sendTrackingWhatsapp(selectedClaim.id)}
+                      disabled={updating}
+                      className="mt-2 w-full bg-green-600 text-white py-2 rounded text-xs font-medium hover:bg-green-700 transition disabled:opacity-50"
+                    >
+                      📱 Enviar tracking por WhatsApp al cliente
+                    </button>
+                  </div>
+                )}
 
                 {selectedClaim.whatsappStatus && (
                   <div className={`rounded-lg p-3 text-sm ${selectedClaim.whatsappStatus === "sent" ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"}`}>

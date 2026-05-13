@@ -36,6 +36,9 @@ interface Claim {
   whatsappStatus: string | null;
   whatsappError: string | null;
   whatsappSentAt: string | Date | null;
+  shipmentTrackingCode: string | null;
+  shipmentTrackingUrl: string | null;
+  shipmentRobotUrl: string | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }

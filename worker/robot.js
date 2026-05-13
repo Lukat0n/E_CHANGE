@@ -500,6 +500,8 @@ export async function createShipment(input) {
     // Paso 4: si submit=true Y llegamos a /review, clickeamos "Crear envío".
     let submitted = false;
     let postSubmitUrl = null;
+    let trackingCode = null;
+    let trackingUrl = null;
     if (input?.submit === true && reachedReview) {
       try {
         const btn = formFrame
@@ -512,6 +514,68 @@ export async function createShipment(input) {
           await page.waitForTimeout(8000);
           postSubmitUrl = page.url();
           console.log(`[createShipment] post-submit URL: ${postSubmitUrl}`);
+
+          // Ahora el envío está creado. Buscamos el botón "Generar" para generar la etiqueta.
+          // Después de hacer click, el código de seguimiento aparece en la página o en una URL.
+          try {
+            await page.waitForTimeout(3000); // dar tiempo a que cargue la página de detalle
+            console.log("[createShipment] buscando botón 'Generar'...");
+
+            // Buscamos en page principal y en frames
+            let generarClicked = false;
+            const candidates = [
+              page.locator('button:has-text("Generar"):not([disabled])').first(),
+              ...page.frames().filter((f) => f !== page.mainFrame() && !f.url().includes("validator"))
+                .map((f) => f.locator('button:has-text("Generar"):not([disabled])').first()),
+            ];
+            for (const c of candidates) {
+              try {
+                if ((await c.count()) > 0 && (await c.isVisible().catch(() => false))) {
+                  // Si "Generar" abre una nueva pestaña/PDF, capturamos el popup
+                  const [newPage] = await Promise.all([
+                    page.context().waitForEvent("page", { timeout: 5000 }).catch(() => null),
+                    c.click({ timeout: 5000 }),
+                  ]);
+                  generarClicked = true;
+                  console.log("[createShipment] 'Generar' clickeado");
+
+                  if (newPage) {
+                    await newPage.waitForLoadState("domcontentloaded", { timeout: 30000 }).catch(() => {});
+                    await newPage.waitForTimeout(3000);
+                    const popupUrl = newPage.url();
+                    const popupContent = await newPage.content().catch(() => "");
+                    console.log(`[createShipment] popup URL: ${popupUrl}`);
+                    // Buscar código de seguimiento Correo Argentino (formato XX#########AR)
+                    const trackingMatch = popupContent.match(/\b([A-Z]{2}\d{9}AR)\b/);
+                    if (trackingMatch) {
+                      trackingCode = trackingMatch[1];
+                      trackingUrl = `https://www.correoargentino.com.ar/formularios/e-commerce?id=${trackingCode}`;
+                      console.log(`[createShipment] tracking code: ${trackingCode}`);
+                    }
+                  } else {
+                    // No popup, esperar y buscar en la página actual
+                    await page.waitForTimeout(5000);
+                    const content = await page.content().catch(() => "");
+                    const trackingMatch = content.match(/\b([A-Z]{2}\d{9}AR)\b/);
+                    if (trackingMatch) {
+                      trackingCode = trackingMatch[1];
+                      trackingUrl = `https://www.correoargentino.com.ar/formularios/e-commerce?id=${trackingCode}`;
+                      console.log(`[createShipment] tracking code en página: ${trackingCode}`);
+                    }
+                  }
+                  break;
+                }
+              } catch (e) {
+                console.log("[createShipment] candidate falló:", e?.message);
+              }
+            }
+
+            if (!generarClicked) {
+              console.log("[createShipment] no encontré botón 'Generar' (probablemente la etiqueta hay que generarla manual desde Tiendanube)");
+            }
+          } catch (err) {
+            console.log("[createShipment] error generando etiqueta:", err?.message);
+          }
         } else {
           console.log("[createShipment] no encontré botón 'Crear envío' habilitado");
         }
@@ -532,6 +596,8 @@ export async function createShipment(input) {
       submitted,
       reachedReview,
       postSubmitUrl,
+      trackingCode,
+      trackingUrl,
       filled,
       filledP3,
       continuarClicked,

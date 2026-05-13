@@ -56,6 +56,10 @@ model Claim {
   whatsappStatus       String?   // null | "sent" | "failed"
   whatsappError        String?   // last error message if failed
   whatsappSentAt       DateTime?
+  // Robot-created shipment tracking
+  shipmentTrackingCode String?   // ej. HC431755210AR (Correo Argentino)
+  shipmentTrackingUrl  String?   // URL pública para que el cliente siga el envío
+  shipmentRobotUrl     String?   // URL del envío en el admin de Tiendanube
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

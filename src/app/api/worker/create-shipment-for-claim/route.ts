@@ -68,9 +68,26 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-api-key": workerKey },
       body: JSON.stringify(input),
-      signal: AbortSignal.timeout(180000), // 3 min: el flujo completo tarda ~90s
+      signal: AbortSignal.timeout(240000), // 4 min: incluye crear envío + generar etiqueta
     });
     const data = await res.json();
+
+    // Si el robot creó el envío y obtuvo tracking, lo guardamos en el claim
+    if (data?.submitted && (data?.trackingCode || data?.postSubmitUrl)) {
+      try {
+        await prisma.claim.update({
+          where: { id: claimId },
+          data: {
+            shipmentTrackingCode: data.trackingCode || null,
+            shipmentTrackingUrl: data.trackingUrl || null,
+            shipmentRobotUrl: data.postSubmitUrl || null,
+          },
+        });
+      } catch (e) {
+        console.error("[create-shipment-for-claim] no se pudo guardar tracking:", e);
+      }
+    }
+
     return NextResponse.json(data, { status: res.status });
   } catch (err) {
     return NextResponse.json(
