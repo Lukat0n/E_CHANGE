@@ -307,10 +307,11 @@ export async function inspectUrl(url) {
  *   }
  */
 export async function createShipment(input) {
-  // valor = 40000 por default: Envío Nube requiere "Valor declarado" en sucursal
-  // (y suma para casos de pérdida/seguro). Como no tenemos el valor real de cada
-  // paquete, fijamos un default razonable y seguimos.
-  const { mode, destZip, alto = 10, ancho = 15, profundidad = 10, peso = 500, valor = 40000, recipient } = input || {};
+  // valor = 4000000 por default: el input de "Valor declarado" usa máscara
+  // de centavos (typear "40000" da $400,00). Para $40.000 hay que pasar
+  // "4000000" (40.000 × 100 centavos). Envío Nube requiere este campo en
+  // sucursal y es seguro tenerlo en domicilio también.
+  const { mode, destZip, alto = 10, ancho = 15, profundidad = 10, peso = 500, valor = 4000000, recipient } = input || {};
 
   if (!mode || (mode !== "domicilio" && mode !== "sucursal")) {
     throw new Error("input.mode debe ser 'domicilio' o 'sucursal'");
@@ -396,82 +397,109 @@ export async function createShipment(input) {
       }
     }
 
-    // Esperar a que el Paso 2 (Seleccionar medio de envío) renderice
+    // Esperar a que el Paso 2 renderice. Para sucursal vamos a /agency-shipment/quotation
+    // (otro layout: CP destino + lista de sucursales + "Crear envío" directo, sin Paso 3/4).
+    // Para domicilio seguimos con el flujo tradicional (carrier picker → Paso 3 → review).
     await page.waitForTimeout(6000);
 
-    // Paso 2: elegir carrier. Por defecto pickeamos el más barato (primer radio
-    // visible). Si input.shippingMethodPreference está, intentamos matchearlo
-    // por nombre.
-    const carrierResult = await pickCarrierRadio(formFrame, input?.shippingMethodPreference);
-    console.log("[createShipment] carrier seleccionado:", JSON.stringify(carrierResult));
-
-    // Esperar a que el form se valide y el Continuar se habilite
-    await page.waitForTimeout(2000);
-
-    // Click "Continuar" para pasar al Paso 3
+    const carrierResult = { sucursal: null };
     let continuar2Clicked = false;
-    try {
-      const btn = formFrame.locator('button:has-text("Continuar"):not([disabled])').first();
-      if ((await btn.count()) > 0) {
-        await btn.click({ timeout: 5000 });
-        continuar2Clicked = true;
-        console.log("[createShipment] Continuar Paso 2 clickeado");
-      }
-    } catch (err) {
-      console.log("[createShipment] no pude clickear Continuar Paso 2:", err?.message);
-    }
-
-    // Esperar a que el Paso 3 ("Completar datos del destinatario") renderice
-    await page.waitForTimeout(6000);
-
-    // Datos del destinatario (con defaults razonables si no se pasaron)
-    const ship = input?.ship || {};
     const filledP3 = {};
-
-    // Provincia (select)
-    if (ship.provincia) {
-      filledP3.provincia = await selectByVisibleText(formFrame, ship.provincia);
-    }
-    if (ship.ciudad) filledP3.city = await fillByNameInFrame(formFrame, "address.city", ship.ciudad);
-    if (ship.calle) filledP3.address = await fillByNameInFrame(formFrame, "address.address", ship.calle);
-    if (ship.numero) filledP3.number = await fillByNameInFrame(formFrame, "address.number", String(ship.numero));
-    if (ship.departamento) filledP3.complement = await fillByNameInFrame(formFrame, "address.complement", ship.departamento);
-    // Barrio: si no viene, usar ciudad como fallback (Tiendanube lo requiere para
-    // avanzar y queda vacío rompe el flow).
-    const barrioFinal = ship.barrio || ship.ciudad || "-";
-    filledP3.neighborhood = await fillByNameInFrame(formFrame, "address.neighborhood", barrioFinal);
-
-    if (recipient?.nombre) filledP3.name = await fillByNameInFrame(formFrame, "customer.name", recipient.nombre);
-    if (recipient?.apellido) filledP3.lastName = await fillByNameInFrame(formFrame, "customer.lastName", recipient.apellido);
-    if (recipient?.email) filledP3.email = await fillByNameInFrame(formFrame, "customer.email", recipient.email);
-    if (recipient?.telefono) filledP3.phone = await fillByNameInFrame(formFrame, "customer.phoneNumber", recipient.telefono);
-
-    console.log("[createShipment] Paso 3 llenado:", JSON.stringify(filledP3));
-
-    // Esperar validación y clickear Continuar al Paso 4
-    await page.waitForTimeout(2500);
     let continuar3Clicked = false;
-    try {
-      const btn = formFrame.locator('button:has-text("Continuar"):not([disabled])').first();
-      if ((await btn.count()) > 0) {
-        await btn.click({ timeout: 5000 });
-        continuar3Clicked = true;
-        console.log("[createShipment] Continuar Paso 3 clickeado");
-      } else {
-        console.log("[createShipment] botón Continuar Paso 3 está disabled o no existe");
-      }
-    } catch (err) {
-      console.log("[createShipment] no pude clickear Continuar Paso 3:", err?.message);
-    }
-
-    // Esperar que la URL cambie a /review (Paso 4). Si no cambia, dumpeamos
-    // errores de validación.
     let reachedReview = false;
-    try {
-      await page.waitForURL((u) => u.toString().includes("/review"), { timeout: 15000 });
+    const ship = input?.ship || {};
+
+    if (mode === "sucursal") {
+      // Esperar la navegación a /quotation (la app SPA puede tardar)
+      try {
+        await page.waitForURL((u) => u.toString().includes("/quotation"), { timeout: 15000 });
+      } catch {}
+      console.log(`[createShipment] sucursal URL post-Paso1: ${page.url()}`);
+
+      // El quotation tiene su propio iframe (mismo origin que el anterior) con un
+      // input zipCode nuevo. Re-buscamos el frame.
+      const quotationFrame = (await findFrameWithInput(page, "zipCode")) || formFrame;
+
+      // Llenar CP destino
+      if (destZip) {
+        const filledCp = await fillByNameInFrame(quotationFrame, "zipCode", String(destZip));
+        console.log(`[createShipment] sucursal CP destino llenado: ${filledCp}`);
+      }
+
+      // Esperar a que cargue la lista de sucursales (hace request al backend)
+      await page.waitForTimeout(8000);
+
+      // Elegir sucursal: usamos input.branchName (o ship.calle, donde guardamos el
+      // nombre de la sucursal en create-shipment-for-claim). pickCarrierRadio acepta
+      // un texto y matchea contra el label del radio (después de limpiar prefijo/sufijo).
+      const branchName = input?.branchName || ship?.calle || null;
+      console.log(`[createShipment] sucursal target: ${branchName}`);
+      carrierResult.sucursal = await pickCarrierRadio(quotationFrame, branchName);
+      console.log("[createShipment] sucursal seleccionada:", JSON.stringify(carrierResult.sucursal));
+
+      await page.waitForTimeout(2500);
+
+      // En sucursal no hay Paso 3 ni review — clickeamos directo "Crear envío" abajo.
+      // Marcamos reachedReview=true para que el bloque de submit se dispare.
       reachedReview = true;
-    } catch {}
-    console.log(`[createShipment] URL después de Paso 3: ${page.url()} (reachedReview=${reachedReview})`);
+    } else {
+      // FLUJO DOMICILIO (Paso 2 carrier → Paso 3 address → Paso 4 review)
+      carrierResult.domicilio = await pickCarrierRadio(formFrame, input?.shippingMethodPreference);
+      console.log("[createShipment] carrier seleccionado:", JSON.stringify(carrierResult.domicilio));
+
+      await page.waitForTimeout(2000);
+
+      try {
+        const btn = formFrame.locator('button:has-text("Continuar"):not([disabled])').first();
+        if ((await btn.count()) > 0) {
+          await btn.click({ timeout: 5000 });
+          continuar2Clicked = true;
+          console.log("[createShipment] Continuar Paso 2 clickeado");
+        }
+      } catch (err) {
+        console.log("[createShipment] no pude clickear Continuar Paso 2:", err?.message);
+      }
+
+      await page.waitForTimeout(6000);
+
+      // Paso 3: datos del destinatario (sólo domicilio)
+      if (ship.provincia) {
+        filledP3.provincia = await selectByVisibleText(formFrame, ship.provincia);
+      }
+      if (ship.ciudad) filledP3.city = await fillByNameInFrame(formFrame, "address.city", ship.ciudad);
+      if (ship.calle) filledP3.address = await fillByNameInFrame(formFrame, "address.address", ship.calle);
+      if (ship.numero) filledP3.number = await fillByNameInFrame(formFrame, "address.number", String(ship.numero));
+      if (ship.departamento) filledP3.complement = await fillByNameInFrame(formFrame, "address.complement", ship.departamento);
+      const barrioFinal = ship.barrio || ship.ciudad || "-";
+      filledP3.neighborhood = await fillByNameInFrame(formFrame, "address.neighborhood", barrioFinal);
+
+      if (recipient?.nombre) filledP3.name = await fillByNameInFrame(formFrame, "customer.name", recipient.nombre);
+      if (recipient?.apellido) filledP3.lastName = await fillByNameInFrame(formFrame, "customer.lastName", recipient.apellido);
+      if (recipient?.email) filledP3.email = await fillByNameInFrame(formFrame, "customer.email", recipient.email);
+      if (recipient?.telefono) filledP3.phone = await fillByNameInFrame(formFrame, "customer.phoneNumber", recipient.telefono);
+
+      console.log("[createShipment] Paso 3 llenado:", JSON.stringify(filledP3));
+
+      await page.waitForTimeout(2500);
+      try {
+        const btn = formFrame.locator('button:has-text("Continuar"):not([disabled])').first();
+        if ((await btn.count()) > 0) {
+          await btn.click({ timeout: 5000 });
+          continuar3Clicked = true;
+          console.log("[createShipment] Continuar Paso 3 clickeado");
+        } else {
+          console.log("[createShipment] botón Continuar Paso 3 está disabled o no existe");
+        }
+      } catch (err) {
+        console.log("[createShipment] no pude clickear Continuar Paso 3:", err?.message);
+      }
+
+      try {
+        await page.waitForURL((u) => u.toString().includes("/review"), { timeout: 15000 });
+        reachedReview = true;
+      } catch {}
+      console.log(`[createShipment] URL después de Paso 3: ${page.url()} (reachedReview=${reachedReview})`);
+    }
 
     // Si no llegamos a /review, dumpear errores de validación visibles
     if (!reachedReview) {

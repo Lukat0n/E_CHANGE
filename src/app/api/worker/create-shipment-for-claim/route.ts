@@ -39,6 +39,12 @@ export async function POST(req: NextRequest) {
   }
 
   const mode = claim.shippingMode === "sucursal" ? "sucursal" : "domicilio";
+
+  // Para sucursal, claim.shippingAddress guarda el NOMBRE de la sucursal elegida
+  // (ej. "Sucursal Av. Corrientes 1234"). El bot lo usa para matchear el radio en
+  // el step de quotation. Para domicilio es la calle real.
+  const branchName = mode === "sucursal" ? (claim.shippingAddress || "") : "";
+
   const input = {
     mode,
     destZip: claim.shippingZipcode || "",
@@ -61,6 +67,7 @@ export async function POST(req: NextRequest) {
       telefono: claim.shippingPhone || claim.customerPhone || "",
     },
     shippingMethodPreference: claim.shippingMethodName || undefined,
+    branchName,
     submit,
   };
 
