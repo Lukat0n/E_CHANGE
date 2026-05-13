@@ -391,50 +391,48 @@ export async function createShipment(input) {
       }
     }
 
-    // Esperar a que el Paso 2 renderice
+    // Esperar a que el Paso 2 (Seleccionar medio de envío) renderice
     await page.waitForTimeout(6000);
 
-    // Re-buscar el iframe (puede haber cambiado de frame) y dumpear inputs
-    const paso2Inputs = await findAllInputs(page);
-    console.log(`[createShipment] Paso 2 inputs: ${paso2Inputs.length}`);
-    console.log(JSON.stringify(paso2Inputs, null, 2));
+    // Paso 2: elegir carrier. Por defecto pickeamos el más barato (primer radio
+    // visible). Si input.shippingMethodPreference está, intentamos matchearlo
+    // por nombre.
+    const carrierResult = await pickCarrierRadio(formFrame, input?.shippingMethodPreference);
+    console.log("[createShipment] carrier seleccionado:", JSON.stringify(carrierResult));
 
-    // También buscar botones/radios visibles para entender el paso
-    const paso2Buttons = await page.evaluate(() => {
-      const found = [];
-      function walk(root) {
-        const els = root.querySelectorAll ? root.querySelectorAll("button, [role='radio'], [role='button'], a") : [];
-        for (const el of els) {
-          const visible = !!(el.offsetParent || el.getClientRects?.().length);
-          if (visible) {
-            found.push({
-              tag: el.tagName.toLowerCase(),
-              text: (el.textContent || "").trim().slice(0, 100),
-              role: el.getAttribute?.("role") || null,
-            });
-          }
-        }
-        const all = root.querySelectorAll ? root.querySelectorAll("*") : [];
-        for (const el of all) if (el.shadowRoot) walk(el.shadowRoot);
-      }
-      walk(document);
-      for (const f of Array.from(document.querySelectorAll("iframe"))) {
-        try { walk(f.contentDocument); } catch {}
-      }
-      return found.slice(0, 30);
-    }).catch(() => []);
-    console.log(`[createShipment] Paso 2 buttons visibles:`, JSON.stringify(paso2Buttons));
+    // Esperar a que el form se valide y el Continuar se habilite
+    await page.waitForTimeout(2000);
 
-    const dump = await debugDump(page, continuarClicked
-      ? "Paso 1 llenado + Continuar clickeado. Mostrando Paso 2."
-      : "Paso 1 llenado. No pude clickear Continuar (probablemente form inválido).");
+    // Click "Continuar" para pasar al Paso 3
+    let continuar2Clicked = false;
+    try {
+      const btn = formFrame.locator('button:has-text("Continuar"):not([disabled])').first();
+      if ((await btn.count()) > 0) {
+        await btn.click({ timeout: 5000 });
+        continuar2Clicked = true;
+        console.log("[createShipment] Continuar Paso 2 clickeado");
+      }
+    } catch (err) {
+      console.log("[createShipment] no pude clickear Continuar Paso 2:", err?.message);
+    }
+
+    // Esperar a que el Paso 3 renderice
+    await page.waitForTimeout(6000);
+
+    const paso3Inputs = await findAllInputs(page);
+    console.log(`[createShipment] Paso 3 inputs: ${paso3Inputs.length}`);
+    console.log(JSON.stringify(paso3Inputs, null, 2));
+
+    const dump = await debugDump(page, `Pasos 1+2 completos. Mostrando Paso 3.`);
     return {
       ...dump,
       dryRun: true,
       filled,
       continuarClicked,
-      paso2InputCount: paso2Inputs.length,
-      paso2Buttons: paso2Buttons.slice(0, 15),
+      carrierResult,
+      continuar2Clicked,
+      paso3InputCount: paso3Inputs.length,
+      paso3Inputs: paso3Inputs.slice(0, 20),
       inputUsed: { mode, destZip, alto, ancho, profundidad, peso, valor, recipient },
     };
   } finally {
@@ -594,6 +592,57 @@ async function fillByNameInFrame(frame, name, value) {
   } catch (err) {
     return { found: false, value, error: err?.message };
   }
+}
+
+/**
+ * En el Paso 2 ("Seleccionar medio de envío"), elige un carrier:
+ *   - Si preference está, busca un radio cuyo label cercano contenga ese texto
+ *     (case insensitive). Ej: "Correo Argentino Clásico".
+ *   - Si no, clickea el primer radio visible (el más barato, Tiendanube ordena
+ *     ascendente por precio).
+ *
+ * Trabaja dentro del iframe del form. Dispara click + change para que React
+ * registre la selección.
+ */
+async function pickCarrierRadio(frame, preference = null) {
+  return frame.evaluate(
+    ({ preference }) => {
+      const radios = Array.from(document.querySelectorAll('input[name="deliveryOptionId"]'));
+      const visible = radios.filter((r) => r.offsetParent || r.getClientRects?.().length);
+      if (visible.length === 0) return { found: false, reason: "sin radios visibles" };
+
+      let target = null;
+      if (preference) {
+        const needle = preference.toLowerCase();
+        for (const r of visible) {
+          // El label/texto del carrier está en algún ancestro o sibling del radio
+          let probe = r.parentElement;
+          let txt = "";
+          for (let i = 0; i < 6 && probe; i++) {
+            txt = (probe.textContent || "").toLowerCase();
+            if (txt.includes(needle)) {
+              target = r;
+              break;
+            }
+            probe = probe.parentElement;
+          }
+          if (target) break;
+        }
+      }
+      if (!target) target = visible[0];
+
+      target.click();
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+      return {
+        found: true,
+        value: target.value,
+        id: target.id,
+        matchedPreference: preference || null,
+        totalVisible: visible.length,
+      };
+    },
+    { preference }
+  );
 }
 
 /**
