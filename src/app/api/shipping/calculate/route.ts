@@ -165,7 +165,18 @@ export async function POST(req: NextRequest) {
     const domicilio = filtered.filter((o) => o.type === "delivery");
     const sucursal = filtered.filter((o) => o.type === "pickup");
 
-    return NextResponse.json({ domicilio, sucursal });
+    // Debug: incluimos también la lista cruda (sin filtrar) y conteos para diagnosticar
+    // por qué a veces falta algún carrier que esperaríamos ver.
+    return NextResponse.json({
+      domicilio,
+      sucursal,
+      _debug: {
+        rawCount: options.length,
+        rawOptions: options.map((o) => ({ name: o.name, type: o.type, price: o.price, code: o.code })),
+        filteredCount: filtered.length,
+        includeFree: !!includeFree,
+      },
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Error calculando el envío";
     return NextResponse.json({ error: msg }, { status: 502 });

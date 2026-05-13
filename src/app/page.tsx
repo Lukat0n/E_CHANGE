@@ -216,6 +216,8 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "No se pudo calcular el envío");
+      // Debug: ver qué carriers devolvió el storefront crudo
+      if (data._debug) console.log("[shipping debug]", data._debug);
       setDomicilioOptions(data.domicilio || []);
       setSucursalOptions(data.sucursal || []);
       // Auto-select cheapest option of current mode
