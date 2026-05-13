@@ -140,6 +140,9 @@ export default function HomePage() {
   // Override "block no_recibido" if customer explicitly says it wasn't received
   // (e.g. shipping_status says delivered but customer never got it)
   const [overrideNotDelivered, setOverrideNotDelivered] = useState(false);
+  // Reenvío: el cliente puede cambiar la dirección o elegir una sucursal específica
+  const [useCustomAddress, setUseCustomAddress] = useState(false);
+  const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   // Shipping method selection: "domicilio" (a casa) | "sucursal" (correo) | "presencial" (depósito)
   const [deliveryMode, setDeliveryMode] = useState<"domicilio" | "sucursal" | "presencial">("domicilio");
   const [domicilioOptions, setDomicilioOptions] = useState<ShippingOption[]>([]);
@@ -261,6 +264,31 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claimType, step, orderInfo]);
 
+  // Cuando se activa "Enviar a otra dirección" en reenvío, pre-poblar los campos
+  // con la dirección original para que el cliente solo edite lo que cambia.
+  useEffect(() => {
+    if (!useCustomAddress || claimType !== "reenvio" || !orderInfo?.shippingAddress) return;
+    if (!shipAddress) setShipAddress(orderInfo.shippingAddress.address || "");
+    if (!shipNumber) setShipNumber(orderInfo.shippingAddress.number || "");
+    if (!shipFloor) setShipFloor(orderInfo.shippingAddress.floor || "");
+    if (!shipNeighborhood) setShipNeighborhood(orderInfo.shippingAddress.locality || "");
+    if (!shipCity) setShipCity(orderInfo.shippingAddress.city || "");
+    if (!shipProvince) setShipProvince(orderInfo.shippingAddress.province || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useCustomAddress, claimType, orderInfo]);
+
+  // Sucursal: auto-seleccionar la primera branch cuando cambia el carrier elegido
+  useEffect(() => {
+    if (deliveryMode !== "sucursal") {
+      if (selectedBranch !== null) setSelectedBranch(null);
+      return;
+    }
+    if (selectedShipping?.branches && selectedShipping.branches.length > 0) {
+      const inList = selectedShipping.branches.includes(selectedBranch || "");
+      if (!inList) setSelectedBranch(selectedShipping.branches[0]);
+    }
+  }, [deliveryMode, selectedShipping, selectedBranch]);
+
   // Reenvío: cuando llegan las opciones, preseleccionar la que matchee el envío original
   useEffect(() => {
     if (claimType !== "reenvio") return;
@@ -321,17 +349,19 @@ export default function HomePage() {
           customerEmail: orderInfo?.customer?.email || customerEmail,
           customerPhone: orderInfo?.customer?.phone || "",
           ...(claimType === "reenvio" && orderInfo && {
-            shippingZipcode: orderInfo.shippingAddress?.zipcode || "",
-            shippingProvince: orderInfo.shippingAddress?.province || "",
-            shippingCity: orderInfo.shippingAddress?.city || "",
-            shippingAddress: orderInfo.shippingAddress?.address || "",
-            shippingNumber: orderInfo.shippingAddress?.number || "",
-            shippingFloor: orderInfo.shippingAddress?.floor || "",
-            shippingNeighborhood: orderInfo.shippingAddress?.locality || "",
+            // Si custom address o sucursal, usamos los valores del form; sino los de la orden original
+            shippingZipcode: useCustomAddress || deliveryMode === "sucursal" ? shipZipcode : (orderInfo.shippingAddress?.zipcode || ""),
+            shippingProvince: useCustomAddress ? shipProvince : (orderInfo.shippingAddress?.province || ""),
+            shippingCity: useCustomAddress ? shipCity : (orderInfo.shippingAddress?.city || ""),
+            shippingAddress: deliveryMode === "sucursal"
+              ? (selectedBranch || "") // para sucursal guardamos la branch elegida acá
+              : (useCustomAddress ? shipAddress : (orderInfo.shippingAddress?.address || "")),
+            shippingNumber: useCustomAddress ? shipNumber : (orderInfo.shippingAddress?.number || ""),
+            shippingFloor: useCustomAddress ? shipFloor : (orderInfo.shippingAddress?.floor || ""),
+            shippingNeighborhood: useCustomAddress ? shipNeighborhood : (orderInfo.shippingAddress?.locality || ""),
             shippingPhone: orderInfo.shippingAddress?.phone || orderInfo.customer?.phone || "",
             shippingRecipientName: (orderInfo.shippingAddress?.name || orderInfo.customer?.name || "").split(" ").slice(0, 1).join(" "),
             shippingRecipientLastName: (orderInfo.shippingAddress?.name || orderInfo.customer?.name || "").split(" ").slice(1).join(" "),
-            // Carrier elegido por el cliente (con 6% surcharge para MP)
             shippingMode: deliveryMode === "sucursal" ? "sucursal" : "domicilio",
             shippingMethodCode: selectedShipping?.code || "reenvio",
             shippingMethodName: selectedShipping?.name || orderInfo.shippingOptionName || orderInfo.shippingCarrier || "Reenvío",
@@ -467,6 +497,8 @@ export default function HomePage() {
               setPaymentLink(null);
               setPaymentAmount(null);
               setOverrideNotDelivered(false);
+              setUseCustomAddress(false);
+              setSelectedBranch(null);
             }}
             className={`px-6 py-2 rounded-lg transition ${
               paymentLink
@@ -1220,14 +1252,100 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Dirección destino (read-only desde la orden) */}
-              {orderInfo?.shippingAddress && (
-                <div className="border border-gray-200 rounded-xl p-4 space-y-1 text-sm">
-                  <p className="font-semibold text-gray-900">Se reenvía a:</p>
-                  <p className="text-gray-700">
-                    {orderInfo.shippingAddress.address}{orderInfo.shippingAddress.number ? ` ${orderInfo.shippingAddress.number}` : ""}, {orderInfo.shippingAddress.city}, {orderInfo.shippingAddress.province} - CP {orderInfo.shippingAddress.zipcode}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Si necesitás cambiar la dirección, indicalo abajo en el motivo.</p>
+              {/* Dirección destino — para domicilio: misma de la orden o custom */}
+              {deliveryMode === "domicilio" && orderInfo?.shippingAddress && (
+                <div className="border border-gray-200 rounded-xl p-4 space-y-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-gray-900">Dirección de destino</p>
+                    <button
+                      type="button"
+                      onClick={() => setUseCustomAddress(!useCustomAddress)}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      {useCustomAddress ? "Usar dirección original" : "Enviar a otra dirección"}
+                    </button>
+                  </div>
+
+                  {!useCustomAddress ? (
+                    <div className="bg-gray-50 rounded p-2 text-gray-700">
+                      {orderInfo.shippingAddress.address}{orderInfo.shippingAddress.number ? ` ${orderInfo.shippingAddress.number}` : ""}
+                      {orderInfo.shippingAddress.floor ? ` - ${orderInfo.shippingAddress.floor}` : ""}
+                      , {orderInfo.shippingAddress.city}, {orderInfo.shippingAddress.province} - CP {orderInfo.shippingAddress.zipcode}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-0.5">Calle *</label>
+                          <input value={shipAddress} onChange={(e) => setShipAddress(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" placeholder="Calle" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-0.5">Número *</label>
+                          <input value={shipNumber} onChange={(e) => setShipNumber(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" placeholder="1234" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-0.5">Piso/Depto</label>
+                          <input value={shipFloor} onChange={(e) => setShipFloor(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" placeholder="Opcional" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-0.5">Barrio</label>
+                          <input value={shipNeighborhood} onChange={(e) => setShipNeighborhood(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" placeholder="Barrio" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-0.5">Ciudad *</label>
+                          <input value={shipCity} onChange={(e) => setShipCity(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-0.5">Provincia *</label>
+                          <input value={shipProvince} onChange={(e) => setShipProvince(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-0.5">CP *</label>
+                          <input value={shipZipcode} onChange={(e) => { setShipZipcode(e.target.value); setDomicilioOptions([]); setSucursalOptions([]); setSelectedShippingCode(""); }} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => calculateShipping(shipZipcode)}
+                        disabled={calculatingShipping || !shipZipcode}
+                        className="w-full bg-blue-600 text-white py-1.5 rounded text-xs font-medium hover:bg-blue-700 transition disabled:opacity-50"
+                      >
+                        {calculatingShipping ? "Recalculando..." : "Recalcular envío con esta dirección"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sucursal seleccionada — para sucursal mode mostrar lista de branches */}
+              {deliveryMode === "sucursal" && selectedShipping?.branches && selectedShipping.branches.length > 0 && (
+                <div className="border border-gray-200 rounded-xl p-4 space-y-2 text-sm">
+                  <p className="font-semibold text-gray-900">Elegí la sucursal de retiro</p>
+                  <p className="text-xs text-gray-500">Sucursales cercanas al CP {orderInfo?.shippingAddress?.zipcode}:</p>
+                  <div className="space-y-1 max-h-64 overflow-y-auto">
+                    {selectedShipping.branches.map((b, i) => (
+                      <label
+                        key={i}
+                        className={`flex items-start gap-2 p-2 rounded border cursor-pointer transition text-xs ${
+                          selectedBranch === b ? "border-blue-600 bg-blue-50" : "border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="sucursal-branch"
+                          value={b}
+                          checked={selectedBranch === b}
+                          onChange={() => setSelectedBranch(b)}
+                          className="mt-0.5"
+                        />
+                        <span className="capitalize text-gray-700">{b}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               )}
 
