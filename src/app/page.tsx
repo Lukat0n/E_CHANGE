@@ -264,18 +264,20 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claimType, step, orderInfo]);
 
-  // Cuando se activa "Enviar a otra dirección" en reenvío, pre-poblar los campos
-  // con la dirección original para que el cliente solo edite lo que cambia.
+  // Cuando se activa "Enviar a otra dirección" en reenvío, limpiar los campos
+  // para que el cliente complete todo desde cero (evita olvidos por copia).
   useEffect(() => {
-    if (!useCustomAddress || claimType !== "reenvio" || !orderInfo?.shippingAddress) return;
-    if (!shipAddress) setShipAddress(orderInfo.shippingAddress.address || "");
-    if (!shipNumber) setShipNumber(orderInfo.shippingAddress.number || "");
-    if (!shipFloor) setShipFloor(orderInfo.shippingAddress.floor || "");
-    if (!shipNeighborhood) setShipNeighborhood(orderInfo.shippingAddress.locality || "");
-    if (!shipCity) setShipCity(orderInfo.shippingAddress.city || "");
-    if (!shipProvince) setShipProvince(orderInfo.shippingAddress.province || "");
+    if (useCustomAddress && claimType === "reenvio") {
+      setShipAddress("");
+      setShipNumber("");
+      setShipFloor("");
+      setShipNeighborhood("");
+      setShipCity("");
+      setShipProvince("");
+      setShipZipcode("");
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useCustomAddress, claimType, orderInfo]);
+  }, [useCustomAddress]);
 
   // Sucursal: auto-seleccionar la primera branch cuando cambia el carrier elegido
   useEffect(() => {
@@ -1294,18 +1296,33 @@ export default function HomePage() {
                           <input value={shipNeighborhood} onChange={(e) => setShipNeighborhood(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" placeholder="Barrio" />
                         </div>
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-0.5">Provincia *</label>
+                        <select
+                          value={shipProvince}
+                          onChange={(e) => setShipProvince(e.target.value)}
+                          className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900 bg-white"
+                        >
+                          <option value="">Seleccioná una provincia</option>
+                          {[
+                            "Buenos Aires", "Ciudad Autónoma de Buenos Aires", "Catamarca", "Chaco",
+                            "Chubut", "Córdoba", "Corrientes", "Entre Ríos", "Formosa", "Jujuy",
+                            "La Pampa", "La Rioja", "Mendoza", "Misiones", "Neuquén", "Río Negro",
+                            "Salta", "San Juan", "San Luis", "Santa Cruz", "Santa Fe",
+                            "Santiago del Estero", "Tierra del Fuego", "Tucumán",
+                          ].map((p) => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="block text-xs text-gray-500 mb-0.5">Ciudad *</label>
-                          <input value={shipCity} onChange={(e) => setShipCity(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-0.5">Provincia *</label>
-                          <input value={shipProvince} onChange={(e) => setShipProvince(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" />
+                          <input value={shipCity} onChange={(e) => setShipCity(e.target.value)} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" placeholder="Ej: Capital Federal" />
                         </div>
                         <div>
                           <label className="block text-xs text-gray-500 mb-0.5">CP *</label>
-                          <input value={shipZipcode} onChange={(e) => { setShipZipcode(e.target.value); setDomicilioOptions([]); setSucursalOptions([]); setSelectedShippingCode(""); }} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" />
+                          <input value={shipZipcode} onChange={(e) => { setShipZipcode(e.target.value); setDomicilioOptions([]); setSucursalOptions([]); setSelectedShippingCode(""); }} className="w-full border border-gray-300 rounded px-2 py-1.5 text-gray-900" placeholder="Ej: 1425" />
                         </div>
                       </div>
                       <button
