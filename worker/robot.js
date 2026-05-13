@@ -719,46 +719,69 @@ async function fillByPlaceholder(page, placeholderRegex, value) {
 }
 
 /**
+ * Construye una URL pública de tracking según el formato del código.
+ *  - XX#########AR  → Correo Argentino
+ *  - ABCDE#######    → e-pick (modalidades rápidas de Envío Nube)
+ */
+function inferTrackerUrl(code) {
+  if (!code) return null;
+  if (/^[A-Z]{2}\d{9}AR$/.test(code)) {
+    return `https://www.correoargentino.com.ar/formularios/e-commerce?id=${code}`;
+  }
+  if (/^[A-Z]{3,6}\d{5,12}$/.test(code)) {
+    return `https://e-pick.com.ar/tracking?id=${code}`;
+  }
+  return null;
+}
+
+/**
  * Busca el código de seguimiento en page + todos los frames. Devuelve { code, url }.
- *
- * Estrategia: el SPA muestra el código como link <a href="..."> apuntando al tracker
- * del carrier (e-pick.com.ar, correoargentino.com.ar, etc.). Capturamos directamente
- * el href de ese link, así obtenemos el URL real sin tener que construirlo.
  */
 async function extractTrackingFromAll(page) {
   const targets = [page, ...page.frames().filter((f) => f !== page.mainFrame() && !f.url().includes("validator"))];
   for (const t of targets) {
     try {
       const result = await t.evaluate(() => {
-        // 1) Buscar links que apunten a sitios típicos de tracking
-        const trackerHosts = ["e-pick.com.ar", "correoargentino.com.ar", "tracking", "seguimiento"];
-        const allLinks = Array.from(document.querySelectorAll("a[href]"));
-        for (const link of allLinks) {
+        // Helper: link válido = http(s), no mailto/tel/javascript/anchor interno
+        function isUsefulLink(href) {
+          if (!href) return false;
+          const h = href.toLowerCase();
+          if (h.startsWith("mailto:") || h.startsWith("tel:") || h.startsWith("javascript:") || h.startsWith("#")) return false;
+          return h.startsWith("http://") || h.startsWith("https://");
+        }
+        function looksLikeTrackerHref(href) {
+          const h = (href || "").toLowerCase();
+          return h.includes("e-pick.com.ar") || h.includes("correoargentino.com.ar") || h.includes("/tracking") || h.includes("/seguimiento");
+        }
+
+        // 1) Link http(s) a host conocido de tracker
+        for (const link of Array.from(document.querySelectorAll("a[href]"))) {
           const href = link.href || "";
-          const isTracker = trackerHosts.some((h) => href.toLowerCase().includes(h.toLowerCase()));
-          if (!isTracker) continue;
+          if (!isUsefulLink(href)) continue;
+          if (!looksLikeTrackerHref(href)) continue;
           const code = (link.textContent || "").trim();
           if (code) return { code, url: href };
         }
 
-        // 2) Fallback: link cerca del texto "Código de seguimiento"
+        // 2) Link http(s) cerca del texto "Código de seguimiento" (sin mailto/tel)
         const labelEls = Array.from(document.querySelectorAll("*")).filter((el) => {
           const txt = (el.textContent || "").trim();
           return /c[oó]digo de seguimiento/i.test(txt) && txt.length < 200;
         });
         for (const el of labelEls) {
           let scope = el.parentElement || el;
-          for (let i = 0; i < 4 && scope; i++) {
-            const link = scope.querySelector("a[href]");
-            if (link) {
+          for (let i = 0; i < 5 && scope; i++) {
+            const candidates = Array.from(scope.querySelectorAll("a[href]"));
+            for (const link of candidates) {
+              if (!isUsefulLink(link.href)) continue;
               const code = (link.textContent || "").trim();
-              if (code) return { code, url: link.href };
+              if (code && code.length < 40) return { code, url: link.href };
             }
             scope = scope.parentElement;
           }
         }
 
-        // 3) Último recurso: match por texto
+        // 3) Último recurso: solo código por regex (sin URL)
         const txt = (document.body?.innerText || "").replace(/\s+/g, " ");
         const m =
           txt.match(/C[oó]digo de seguimiento[:\s]+([A-Z0-9-]{6,30})/i) ||
@@ -768,7 +791,13 @@ async function extractTrackingFromAll(page) {
 
         return null;
       });
-      if (result) return result;
+      if (result) {
+        // Si no encontramos un URL en el DOM, intentamos construirlo según el código
+        if (!result.url) {
+          result.url = inferTrackerUrl(result.code);
+        }
+        return result;
+      }
     } catch {}
   }
   return null;
