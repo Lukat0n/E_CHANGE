@@ -340,9 +340,11 @@ export async function createShipment(input) {
 
     // Encontrar el iframe que contiene el form. Los inputs viven adentro de un
     // child frame (Envío Nube es una app embedded de Tiendanube).
-    const formFrame = await findFrameWithInput(page, "zipCode");
+    // box.height existe en ambos modos (domicilio y sucursal); zipCode sólo en domicilio.
+    const sentinelField = mode === "sucursal" ? "customer.name" : "zipCode";
+    const formFrame = await findFrameWithInput(page, sentinelField);
     if (!formFrame) {
-      const dump = await debugDump(page, "No encontré el iframe del form de Envío Nube");
+      const dump = await debugDump(page, `No encontré el iframe del form de Envío Nube (sentinel: ${sentinelField})`);
       return { ...dump, dryRun: true, filled: {} };
     }
 
@@ -354,12 +356,12 @@ export async function createShipment(input) {
       if (peso) filled.weight = await fillByNameInFrame(formFrame, "box.weight", String(peso));
       if (valor) filled.declaredValue = await fillByNameInFrame(formFrame, "declaredValue", String(valor));
     } else {
-      // Para sucursal mantenemos los selectores por placeholder/label
-      // (cuando inspeccionemos esa URL veremos los names reales)
-      if (recipient.nombre) filled.nombre = await fillByNameInFrame(formFrame, "firstName", recipient.nombre);
-      if (recipient.apellido) filled.apellido = await fillByNameInFrame(formFrame, "lastName", recipient.apellido);
-      if (recipient.email) filled.email = await fillByNameInFrame(formFrame, "email", recipient.email);
-      if (recipient.telefono) filled.telefono = await fillByNameInFrame(formFrame, "phone", recipient.telefono);
+      // Sucursal: en /agency-shipment los nombres reales son customer.name/customer.surname/
+      // customer.email/customer.phoneNumber (NO firstName/lastName como pensábamos antes).
+      if (recipient.nombre) filled.nombre = await fillByNameInFrame(formFrame, "customer.name", recipient.nombre);
+      if (recipient.apellido) filled.apellido = await fillByNameInFrame(formFrame, "customer.surname", recipient.apellido);
+      if (recipient.email) filled.email = await fillByNameInFrame(formFrame, "customer.email", recipient.email);
+      if (recipient.telefono) filled.telefono = await fillByNameInFrame(formFrame, "customer.phoneNumber", recipient.telefono);
       filled.height = await fillByNameInFrame(formFrame, "box.height", String(alto));
       filled.width = await fillByNameInFrame(formFrame, "box.width", String(ancho));
       filled.depth = await fillByNameInFrame(formFrame, "box.depth", String(profundidad));
