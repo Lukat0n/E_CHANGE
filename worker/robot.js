@@ -431,7 +431,10 @@ export async function createShipment(input) {
     if (ship.calle) filledP3.address = await fillByNameInFrame(formFrame, "address.address", ship.calle);
     if (ship.numero) filledP3.number = await fillByNameInFrame(formFrame, "address.number", String(ship.numero));
     if (ship.departamento) filledP3.complement = await fillByNameInFrame(formFrame, "address.complement", ship.departamento);
-    if (ship.barrio) filledP3.neighborhood = await fillByNameInFrame(formFrame, "address.neighborhood", ship.barrio);
+    // Barrio: si no viene, usar ciudad como fallback (Tiendanube lo requiere para
+    // avanzar y queda vacío rompe el flow).
+    const barrioFinal = ship.barrio || ship.ciudad || "-";
+    filledP3.neighborhood = await fillByNameInFrame(formFrame, "address.neighborhood", barrioFinal);
 
     if (recipient?.nombre) filledP3.name = await fillByNameInFrame(formFrame, "customer.name", recipient.nombre);
     if (recipient?.apellido) filledP3.lastName = await fillByNameInFrame(formFrame, "customer.lastName", recipient.apellido);
@@ -441,7 +444,7 @@ export async function createShipment(input) {
     console.log("[createShipment] Paso 3 llenado:", JSON.stringify(filledP3));
 
     // Esperar validación y clickear Continuar al Paso 4
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(2500);
     let continuar3Clicked = false;
     try {
       const btn = formFrame.locator('button:has-text("Continuar"):not([disabled])').first();
@@ -449,19 +452,55 @@ export async function createShipment(input) {
         await btn.click({ timeout: 5000 });
         continuar3Clicked = true;
         console.log("[createShipment] Continuar Paso 3 clickeado");
+      } else {
+        console.log("[createShipment] botón Continuar Paso 3 está disabled o no existe");
       }
     } catch (err) {
       console.log("[createShipment] no pude clickear Continuar Paso 3:", err?.message);
     }
-    await page.waitForTimeout(6000);
 
+    // Esperar que la URL cambie a /review (Paso 4). Si no cambia, dumpeamos
+    // errores de validación.
+    let reachedReview = false;
+    try {
+      await page.waitForURL((u) => u.toString().includes("/review"), { timeout: 15000 });
+      reachedReview = true;
+    } catch {}
+    console.log(`[createShipment] URL después de Paso 3: ${page.url()} (reachedReview=${reachedReview})`);
+
+    // Si no llegamos a /review, dumpear errores de validación visibles
+    if (!reachedReview) {
+      const validationErrors = await page.evaluate(() => {
+        const found = [];
+        function walk(root) {
+          // Buscamos textos con clases de error típicas de Nimbus o atributos aria-invalid
+          const errs = root.querySelectorAll
+            ? root.querySelectorAll('[aria-invalid="true"], [class*="error" i], [class*="invalid" i], [role="alert"]')
+            : [];
+          for (const el of errs) {
+            const txt = (el.textContent || "").trim().slice(0, 200);
+            if (txt) found.push(txt);
+          }
+          const all = root.querySelectorAll ? root.querySelectorAll("*") : [];
+          for (const el of all) if (el.shadowRoot) walk(el.shadowRoot);
+        }
+        walk(document);
+        for (const f of Array.from(document.querySelectorAll("iframe"))) {
+          try { walk(f.contentDocument); } catch {}
+        }
+        return [...new Set(found)].slice(0, 20);
+      }).catch(() => []);
+      console.log(`[createShipment] errores de validación Paso 3:`, JSON.stringify(validationErrors));
+    }
+
+    await page.waitForTimeout(3000);
     const paso4Inputs = await findAllInputs(page);
     console.log(`[createShipment] Paso 4 inputs: ${paso4Inputs.length}`);
 
-    // Paso 4: si submit=true, clickeamos "Crear envío". Si no, dry run.
+    // Paso 4: si submit=true Y llegamos a /review, clickeamos "Crear envío".
     let submitted = false;
     let postSubmitUrl = null;
-    if (input?.submit === true) {
+    if (input?.submit === true && reachedReview) {
       try {
         const btn = formFrame
           .locator('button:has-text("Crear envío"):not([disabled])')
@@ -481,16 +520,17 @@ export async function createShipment(input) {
       }
     }
 
-    const dump = await debugDump(
-      page,
-      submitted
-        ? `Envío creado. URL final: ${postSubmitUrl}`
-        : `Pasos 1+2+3 completos. Paso 4 (review) listo. DRY RUN: no apretamos 'Crear envío'.`
-    );
+    const dumpMsg = submitted
+      ? `Envío creado. URL final: ${postSubmitUrl}`
+      : reachedReview
+        ? `Pasos 1+2+3 OK. Llegamos al review pero no se apretó 'Crear envío' (dry run o botón no encontrado).`
+        : `No llegamos al review. URL final: ${page.url()}. Revisar errores de validación en logs.`;
+    const dump = await debugDump(page, dumpMsg);
     return {
       ...dump,
       dryRun: !submitted,
       submitted,
+      reachedReview,
       postSubmitUrl,
       filled,
       filledP3,
