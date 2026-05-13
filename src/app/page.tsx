@@ -274,13 +274,10 @@ export default function HomePage() {
       .trim();
   }
 
-  // Para reenvío usamos el precio del storefront directo + 6% para MP.
-  // Si el storefront retorna $0 (promo de envío gratis), SOLO usamos
-  // shipping_cost_owner como fallback si el carrier matchea el original
-  // (porque eso es lo que el merchant realmente pagó). Si es un carrier
-  // distinto, no tenemos un precio confiable → devolvemos 0 y lo filtramos
-  // de la lista. Antes el fallback ciego pisaba el precio de Clásico con
-  // el de e-pick cuando Clásico venía a $0 por promo.
+  // Para reenvío usamos el precio que devuelve el backend. El backend ya enriquece
+  // con cotización del bot (Envío Nube admin) cuando la storefront retorna $0 por
+  // promo. Si aún así el precio es 0 (el bot no pudo cotizar ese carrier), caemos
+  // a shipping_cost_owner SOLO si el carrier matchea el original.
   function reenvioCarrierPrice(carrier: ShippingOption): number {
     if (claimType !== "reenvio") return carrier.price;
     if (carrier.price > 0) return carrier.price;

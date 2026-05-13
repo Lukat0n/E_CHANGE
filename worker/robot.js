@@ -951,6 +951,115 @@ async function selectByVisibleText(frame, optionText) {
  *   "Correo Argentino Clásico a domicilio"
  *     → "correo argentino clásico a domicilio"
  */
+/**
+ * Cotiza los carriers disponibles para un CP en el admin de Envío Nube.
+ * Hace login + abre "Crear envío manual" + llena CP y medidas + click Continuar
+ * para llegar al Paso 2. Ahí lee TODOS los radios con su label y precio, y
+ * devuelve la lista sin crear el envío.
+ *
+ * Input:
+ *   { destZip: "2000", alto: 10, ancho: 15, profundidad: 10, peso: 500 }
+ *
+ * Output:
+ *   { ok: true, zipcode: "2000", carriers: [{ key: "correo argentino clásico a domicilio", name: "Envío Nube - Correo Argentino Clásico a domicilio - Llega entre el viernes 15/05 y el jueves 21/05", price: 7434 }, ...] }
+ */
+export async function quoteCarriers(input) {
+  const { destZip, alto = 10, ancho = 15, profundidad = 10, peso = 500 } = input || {};
+  if (!destZip) throw new Error("Falta destZip");
+
+  const url = "https://gelica.mitiendanube.com/admin/apps/envionube/ar#/create-single-shipment";
+
+  const { browser, page } = await launchBrowser();
+  try {
+    await loginToTiendanube(page, url);
+    if (!page.url().startsWith(url.split("#")[0])) {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+    }
+    await page.waitForTimeout(8000);
+
+    const formFrame = await findFrameWithInput(page, "zipCode");
+    if (!formFrame) {
+      const dump = await debugDump(page, "No encontré el iframe del form de Envío Nube");
+      return { ok: false, error: "form-frame-not-found", ...dump };
+    }
+
+    await fillByNameInFrame(formFrame, "zipCode", String(destZip));
+    await fillByNameInFrame(formFrame, "box.height", String(alto));
+    await fillByNameInFrame(formFrame, "box.width", String(ancho));
+    await fillByNameInFrame(formFrame, "box.depth", String(profundidad));
+    await fillByNameInFrame(formFrame, "box.weight", String(peso));
+
+    await page.waitForTimeout(2500);
+
+    // Click Continuar
+    let continuarClicked = false;
+    try {
+      const btn = formFrame.locator('button:has-text("Continuar"):not([disabled])').first();
+      if ((await btn.count()) > 0) {
+        await btn.click({ timeout: 5000 });
+        continuarClicked = true;
+      }
+    } catch {}
+    if (!continuarClicked) {
+      try {
+        const btn = page.locator('button:has-text("Continuar"):not([disabled])').first();
+        await btn.click({ timeout: 5000 });
+        continuarClicked = true;
+      } catch (err) {
+        console.log("[quoteCarriers] no pude clickear Continuar:", err?.message);
+      }
+    }
+
+    // Esperar a que el Paso 2 renderice los radios de carrier
+    await page.waitForTimeout(6000);
+
+    // Leer todos los radios con su label y precio
+    const carriers = await formFrame.evaluate(() => {
+      const radios = Array.from(document.querySelectorAll('input[name="deliveryOptionId"]'));
+      const visible = radios.filter((r) => r.offsetParent || r.getClientRects?.().length);
+
+      // Extrae el bloque de texto del label asociado a un radio subiendo por padres
+      function labelText(r) {
+        let probe = r.parentElement;
+        for (let i = 0; i < 6 && probe; i++) {
+          const t = (probe.textContent || "").trim();
+          if (t.length > 3 && t.length < 500) return t;
+          probe = probe.parentElement;
+        }
+        return "";
+      }
+
+      // Saca el primer monto "$ 7.434,00" o "$7.434,00" o "$ 7434" del texto
+      function extractPrice(text) {
+        const m = text.match(/\$\s*([0-9]{1,3}(?:[\.\,][0-9]{3})*(?:[\.\,][0-9]{2})?)/);
+        if (!m) return null;
+        // Normaliza "7.434,00" → 7434.00
+        const raw = m[1];
+        const cleaned = raw.replace(/\./g, "").replace(",", ".");
+        const n = parseFloat(cleaned);
+        return Number.isFinite(n) ? n : null;
+      }
+
+      // Saca el nombre del carrier: tomamos lo que va antes del primer "$" o salto de línea.
+      function extractName(text) {
+        const cut = text.split(/\$|\n/)[0];
+        return cut.trim();
+      }
+
+      return visible.map((r) => {
+        const txt = labelText(r);
+        return { id: r.id, value: r.value, rawText: txt.slice(0, 300), name: extractName(txt), price: extractPrice(txt) };
+      });
+    });
+
+    return { ok: true, zipcode: String(destZip), continuarClicked, carriers };
+  } catch (err) {
+    return { ok: false, error: err?.message || String(err) };
+  } finally {
+    await browser.close();
+  }
+}
+
 function extractCarrierKey(name) {
   if (!name) return null;
   let key = String(name).trim();

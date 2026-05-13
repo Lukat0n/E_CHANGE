@@ -69,3 +69,18 @@ model AdminUser {
   email    String @unique
   password String
 }
+
+// Cache de cotizaciones del bot (Envío Nube admin). Se usa cuando la storefront
+// devuelve $0 por promo de envío gratis y queremos el precio real del merchant.
+// TTL ~24h: pasado ese tiempo se re-cotiza al bot.
+model CarrierQuote {
+  id          String   @id @default(cuid())
+  storeId     String   // FK al Store.storeId (no relación porque el storeId del store es único en Store)
+  zipcode     String
+  carrierKey  String   // nombre normalizado (ej. "correo argentino clásico a domicilio")
+  price       Float
+  fetchedAt   DateTime @default(now())
+
+  @@unique([storeId, zipcode, carrierKey])
+  @@index([storeId, zipcode])
+}

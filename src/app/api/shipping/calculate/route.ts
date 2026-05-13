@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findStore } from "@/lib/store";
 import { getStoreInfo } from "@/lib/tiendanube";
+import { prisma } from "@/lib/prisma";
+
+// El fallback al bot tarda ~15-25s (login + paso 1 + leer radios). Cuando el
+// cache está caliente devuelve en <100ms. Subimos el timeout para cubrir el
+// primer hit del día por CP.
+export const maxDuration = 90;
 
 interface ParsedOption {
   code: string;
@@ -82,6 +88,81 @@ function decodeHtmlEntities(s: string): string {
 }
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+// TTL del cache de cotizaciones del bot (Envío Nube admin). Los precios cambian
+// rara vez (semanas/meses), pero 24h es un buen balance entre frescura y costo.
+const QUOTE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+// Normaliza un nombre de carrier (storefront o admin) para hacer match cruzado.
+// Saca el prefijo "Envío Nube - " y el sufijo " - Llega entre el...".
+function carrierKey(name: string): string {
+  return (name || "")
+    .toLowerCase()
+    .replace(/^env[ií]o\s*nube\s*-\s*/i, "")
+    .split(/\s*-\s*llega/i)[0]
+    .trim();
+}
+
+interface AdminQuote {
+  carrierKey: string;
+  price: number;
+}
+
+// Lee precios cacheados (TTL 24h) o llama al worker para cotizar via el bot.
+// El bot abre el admin de Envío Nube, llena CP + medidas y lee los precios del
+// Paso 2 sin crear el envío. Cachea por (storeId, zipcode).
+async function getAdminQuotes(storeId: string, zipcode: string): Promise<AdminQuote[]> {
+  const cutoff = new Date(Date.now() - QUOTE_CACHE_TTL_MS);
+  const cached = await prisma.carrierQuote.findMany({
+    where: { storeId, zipcode, fetchedAt: { gt: cutoff } },
+  });
+  if (cached.length > 0) {
+    return cached.map((c) => ({ carrierKey: c.carrierKey, price: c.price }));
+  }
+
+  const workerUrl = process.env.WORKER_URL;
+  const workerKey = process.env.WORKER_API_KEY;
+  if (!workerUrl || !workerKey) {
+    console.warn("[calculate] WORKER_URL/WORKER_API_KEY no configuradas, skip admin quote");
+    return [];
+  }
+
+  try {
+    const res = await fetch(`${workerUrl.replace(/\/$/, "")}/api/quote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": workerKey },
+      body: JSON.stringify({ destZip: zipcode, alto: 10, ancho: 15, profundidad: 10, peso: 500 }),
+      signal: AbortSignal.timeout(60000), // bot toma ~15-25s para llegar al paso 2
+    });
+    const data = (await res.json()) as { ok?: boolean; carriers?: Array<{ name?: string; price?: number | null }> };
+    if (!data?.ok || !Array.isArray(data.carriers)) {
+      console.warn("[calculate] worker /api/quote no devolvió carriers:", JSON.stringify(data).slice(0, 300));
+      return [];
+    }
+
+    const quotes: AdminQuote[] = [];
+    for (const c of data.carriers) {
+      if (!c?.name || typeof c.price !== "number" || c.price <= 0) continue;
+      quotes.push({ carrierKey: carrierKey(c.name), price: c.price });
+    }
+
+    // Persistimos en cache (upsert por unique [storeId, zipcode, carrierKey])
+    await Promise.all(
+      quotes.map((q) =>
+        prisma.carrierQuote.upsert({
+          where: { storeId_zipcode_carrierKey: { storeId, zipcode, carrierKey: q.carrierKey } },
+          create: { storeId, zipcode, carrierKey: q.carrierKey, price: q.price },
+          update: { price: q.price, fetchedAt: new Date() },
+        })
+      )
+    );
+
+    return quotes;
+  } catch (err) {
+    console.error("[calculate] error llamando al worker para cotizar:", err);
+    return [];
+  }
+}
 
 async function fetchShippingOptions(storeUrl: string, zipcode: string, variantId: number, quantity: number) {
   // Step 1: GET the homepage to establish Cloudflare session cookies
@@ -166,10 +247,31 @@ export async function POST(req: NextRequest) {
   try {
     const options = await fetchShippingOptions(storeUrl, String(zipcode), Number(variantId), Number(quantity) || 1);
 
+    // Para reenvío (includeFree=true): si algún carrier viene a $0 por promo,
+    // cotizamos via el bot (Envío Nube admin) y completamos esos precios.
+    // El cache de Prisma evita re-cotizar cuando ya tenemos un precio fresco (<24h).
+    let enriched = false;
+    let adminQuotes: AdminQuote[] = [];
+    if (includeFree) {
+      const zeroDeliveryCarriers = options.filter((o) => o.type === "delivery" && o.price <= 0);
+      if (zeroDeliveryCarriers.length > 0) {
+        adminQuotes = await getAdminQuotes(store.storeId, String(zipcode));
+        for (const o of options) {
+          if (o.price > 0) continue;
+          const match = adminQuotes.find((q) => q.carrierKey === carrierKey(o.name));
+          if (match) {
+            o.price = match.price;
+            enriched = true;
+          }
+        }
+      }
+    }
+
     // Filter out free-shipping promotions: cambios never go free, only first shipment does.
     // Para reenvío (includeFree=true) queremos ver TODOS los carriers (incluso los que
-    // aparecen a $0 por promo de envío gratis), porque cobramos via MP basándonos en
-    // shipping_cost_owner de la orden, no en el precio storefront.
+    // aparecen a $0 por promo de envío gratis). Después de enriquecer con admin quotes,
+    // los que quedan a $0 son los que el bot tampoco pudo matchear → los dejamos pasar
+    // y la UI los filtra si no tienen precio.
     const filtered = includeFree ? options : options.filter((o) => o.price > 0);
 
     const domicilio = filtered.filter((o) => o.type === "delivery");
@@ -185,6 +287,8 @@ export async function POST(req: NextRequest) {
         rawOptions: options.map((o) => ({ name: o.name, type: o.type, price: o.price, code: o.code })),
         filteredCount: filtered.length,
         includeFree: !!includeFree,
+        enriched,
+        adminQuotes,
       },
     });
   } catch (err) {
