@@ -338,29 +338,33 @@ export async function createShipment(input) {
 
     const filled = {};
 
+    // Encontrar el iframe que contiene el form. Los inputs viven adentro de un
+    // child frame (Envío Nube es una app embedded de Tiendanube).
+    const formFrame = await findFrameWithInput(page, "zipCode");
+    if (!formFrame) {
+      const dump = await debugDump(page, "No encontré el iframe del form de Envío Nube");
+      return { ...dump, dryRun: true, filled: {} };
+    }
+
     if (mode === "domicilio") {
-      filled.codigoPostal = await fillByPlaceholder(page, /c[oó]digo postal/i, String(destZip));
-
-      // Alto/Ancho/Profundidad: 3 inputs con placeholder "30" en ese orden — llenamos via evaluate
-      const dimResult = await fillNthByPlaceholderShadow(page, "30", [String(alto), String(ancho), String(profundidad)]);
-      filled.alto = { found: dimResult.filled >= 1, value: alto };
-      filled.ancho = { found: dimResult.filled >= 2, value: ancho };
-      filled.profundidad = { found: dimResult.filled >= 3, value: profundidad };
-
-      if (peso) filled.peso = await fillByPlaceholder(page, /^peso$/i, String(peso));
-      if (valor) filled.valor = await fillByPlaceholder(page, /^\$$/, String(valor));
+      filled.zipCode = await fillByNameInFrame(formFrame, "zipCode", String(destZip));
+      filled.height = await fillByNameInFrame(formFrame, "box.height", String(alto));
+      filled.width = await fillByNameInFrame(formFrame, "box.width", String(ancho));
+      filled.depth = await fillByNameInFrame(formFrame, "box.depth", String(profundidad));
+      if (peso) filled.weight = await fillByNameInFrame(formFrame, "box.weight", String(peso));
+      if (valor) filled.declaredValue = await fillByNameInFrame(formFrame, "declaredValue", String(valor));
     } else {
-      // Para sucursal, los labels son Nombre/Apellido/Email/Teléfono
-      if (recipient.nombre) filled.nombre = await fillByLabelOrPlaceholder(page, /nombre/i, recipient.nombre);
-      if (recipient.apellido) filled.apellido = await fillByLabelOrPlaceholder(page, /apellido/i, recipient.apellido);
-      if (recipient.email) filled.email = await fillByLabelOrPlaceholder(page, /email/i, recipient.email);
-      if (recipient.telefono) filled.telefono = await fillByLabelOrPlaceholder(page, /tel[eé]fono/i, recipient.telefono);
-
-      const dimResult2 = await fillNthByPlaceholderShadow(page, "30", [String(alto), String(ancho), String(profundidad)]);
-      filled.alto = filled.ancho = filled.profundidad = { found: dimResult2.filled >= 3 };
-
-      if (peso) filled.peso = await fillByPlaceholder(page, /^peso$/i, String(peso));
-      if (valor) filled.valor = await fillByPlaceholder(page, /valor declarado|^\$$/i, String(valor));
+      // Para sucursal mantenemos los selectores por placeholder/label
+      // (cuando inspeccionemos esa URL veremos los names reales)
+      if (recipient.nombre) filled.nombre = await fillByNameInFrame(formFrame, "firstName", recipient.nombre);
+      if (recipient.apellido) filled.apellido = await fillByNameInFrame(formFrame, "lastName", recipient.apellido);
+      if (recipient.email) filled.email = await fillByNameInFrame(formFrame, "email", recipient.email);
+      if (recipient.telefono) filled.telefono = await fillByNameInFrame(formFrame, "phone", recipient.telefono);
+      filled.height = await fillByNameInFrame(formFrame, "box.height", String(alto));
+      filled.width = await fillByNameInFrame(formFrame, "box.width", String(ancho));
+      filled.depth = await fillByNameInFrame(formFrame, "box.depth", String(profundidad));
+      if (peso) filled.weight = await fillByNameInFrame(formFrame, "box.weight", String(peso));
+      if (valor) filled.declaredValue = await fillByNameInFrame(formFrame, "declaredValue", String(valor));
     }
 
     // DRY RUN: no apretamos Continuar. Tomamos screenshot del estado actual.
@@ -484,6 +488,51 @@ async function fillByPlaceholder(page, placeholderRegex, value) {
   );
 
   return { ...result, value };
+}
+
+/**
+ * Encuentra el frame hijo que contiene un input con el name dado.
+ * Tiendanube embebe Envío Nube en un iframe; los inputs viven adentro.
+ */
+async function findFrameWithInput(page, name) {
+  const frames = page.frames();
+  for (const frame of frames) {
+    if (frame === page.mainFrame()) continue;
+    if (frame.url() === "about:blank" || frame.url().includes("validator")) continue;
+    try {
+      const exists = await frame.evaluate((n) => !!document.querySelector(`input[name="${n}"]`), name);
+      if (exists) {
+        console.log(`[findFrameWithInput] form en frame: ${frame.url()}`);
+        return frame;
+      }
+    } catch {}
+  }
+  return null;
+}
+
+/**
+ * Llena un input por su name dentro de un frame. Dispara eventos React-compatibles.
+ */
+async function fillByNameInFrame(frame, name, value) {
+  try {
+    const result = await frame.evaluate(
+      ({ name, value }) => {
+        const el = document.querySelector(`input[name="${name}"]`);
+        if (!el) return { found: false };
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        nativeSetter.call(el, value);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        // También blur para que valide
+        el.dispatchEvent(new Event("blur", { bubbles: true }));
+        return { found: true, currentValue: el.value };
+      },
+      { name, value }
+    );
+    return { ...result, value };
+  } catch (err) {
+    return { found: false, value, error: err?.message };
+  }
 }
 
 /**
