@@ -150,7 +150,19 @@ export default function AdminDashboard({
           ancho: 15,
           profundidad: 10,
           peso: 500,
-          valor: 15000,
+          ship: {
+            provincia: "Ciudad Autónoma de Buenos Aires",
+            ciudad: "Capital Federal",
+            calle: "Juan B. Justo",
+            numero: "1234",
+            barrio: "Palermo",
+          },
+          recipient: {
+            nombre: "Juan",
+            apellido: "Pérez",
+            email: "juan@test.com",
+            telefono: "1155667788",
+          },
         }),
       });
       const data = await res.json();

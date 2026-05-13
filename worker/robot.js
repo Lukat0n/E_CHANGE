@@ -416,24 +416,61 @@ export async function createShipment(input) {
       console.log("[createShipment] no pude clickear Continuar Paso 2:", err?.message);
     }
 
-    // Esperar a que el Paso 3 renderice
+    // Esperar a que el Paso 3 ("Completar datos del destinatario") renderice
     await page.waitForTimeout(6000);
 
-    const paso3Inputs = await findAllInputs(page);
-    console.log(`[createShipment] Paso 3 inputs: ${paso3Inputs.length}`);
-    console.log(JSON.stringify(paso3Inputs, null, 2));
+    // Datos del destinatario (con defaults razonables si no se pasaron)
+    const ship = input?.ship || {};
+    const filledP3 = {};
 
-    const dump = await debugDump(page, `Pasos 1+2 completos. Mostrando Paso 3.`);
+    // Provincia (select)
+    if (ship.provincia) {
+      filledP3.provincia = await selectByVisibleText(formFrame, ship.provincia);
+    }
+    if (ship.ciudad) filledP3.city = await fillByNameInFrame(formFrame, "address.city", ship.ciudad);
+    if (ship.calle) filledP3.address = await fillByNameInFrame(formFrame, "address.address", ship.calle);
+    if (ship.numero) filledP3.number = await fillByNameInFrame(formFrame, "address.number", String(ship.numero));
+    if (ship.departamento) filledP3.complement = await fillByNameInFrame(formFrame, "address.complement", ship.departamento);
+    if (ship.barrio) filledP3.neighborhood = await fillByNameInFrame(formFrame, "address.neighborhood", ship.barrio);
+
+    if (recipient?.nombre) filledP3.name = await fillByNameInFrame(formFrame, "customer.name", recipient.nombre);
+    if (recipient?.apellido) filledP3.lastName = await fillByNameInFrame(formFrame, "customer.lastName", recipient.apellido);
+    if (recipient?.email) filledP3.email = await fillByNameInFrame(formFrame, "customer.email", recipient.email);
+    if (recipient?.telefono) filledP3.phone = await fillByNameInFrame(formFrame, "customer.phoneNumber", recipient.telefono);
+
+    console.log("[createShipment] Paso 3 llenado:", JSON.stringify(filledP3));
+
+    // Esperar validación y clickear Continuar al Paso 4
+    await page.waitForTimeout(2000);
+    let continuar3Clicked = false;
+    try {
+      const btn = formFrame.locator('button:has-text("Continuar"):not([disabled])').first();
+      if ((await btn.count()) > 0) {
+        await btn.click({ timeout: 5000 });
+        continuar3Clicked = true;
+        console.log("[createShipment] Continuar Paso 3 clickeado");
+      }
+    } catch (err) {
+      console.log("[createShipment] no pude clickear Continuar Paso 3:", err?.message);
+    }
+    await page.waitForTimeout(6000);
+
+    const paso4Inputs = await findAllInputs(page);
+    console.log(`[createShipment] Paso 4 inputs: ${paso4Inputs.length}`);
+
+    const dump = await debugDump(page, `Pasos 1+2+3 completos. Mostrando Paso 4.`);
     return {
       ...dump,
       dryRun: true,
       filled,
+      filledP3,
       continuarClicked,
       carrierResult,
       continuar2Clicked,
-      paso3InputCount: paso3Inputs.length,
-      paso3Inputs: paso3Inputs.slice(0, 20),
-      inputUsed: { mode, destZip, alto, ancho, profundidad, peso, valor, recipient },
+      continuar3Clicked,
+      paso4InputCount: paso4Inputs.length,
+      paso4Inputs: paso4Inputs.slice(0, 20),
+      inputUsed: { mode, destZip, alto, ancho, profundidad, peso, valor, recipient, ship },
     };
   } finally {
     await browser.close();
@@ -592,6 +629,44 @@ async function fillByNameInFrame(frame, name, value) {
   } catch (err) {
     return { found: false, value, error: err?.message };
   }
+}
+
+/**
+ * Selecciona una opción en un <select> por texto visible.
+ * Maneja tanto selects nativos como custom dropdowns de Nimbus (que usan
+ * un combobox con role="combobox" y options dinámicas).
+ */
+async function selectByVisibleText(frame, optionText) {
+  // Estrategia 1: select nativo (busca cualquier <select> de Provincia)
+  const nativeResult = await frame.evaluate((optionText) => {
+    const selects = Array.from(document.querySelectorAll("select"));
+    for (const sel of selects) {
+      const opts = Array.from(sel.options || []);
+      const opt = opts.find((o) => (o.textContent || "").trim().toLowerCase() === optionText.toLowerCase());
+      if (opt) {
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, "value").set;
+        nativeSetter.call(sel, opt.value);
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+        return { found: true, selected: opt.textContent.trim() };
+      }
+    }
+    return { found: false };
+  }, optionText);
+
+  if (nativeResult.found) return nativeResult;
+
+  // Estrategia 2: Nimbus combobox — click para abrir, click en la opción
+  try {
+    const combobox = frame.locator('[role="combobox"], [aria-haspopup="listbox"]').first();
+    if ((await combobox.count()) > 0) {
+      await combobox.click({ timeout: 5000 });
+      await frame.locator(`text="${optionText}"`).first().click({ timeout: 5000 });
+      return { found: true, selected: optionText, strategy: "combobox" };
+    }
+  } catch (err) {
+    return { found: false, error: err?.message };
+  }
+  return { found: false };
 }
 
 /**
