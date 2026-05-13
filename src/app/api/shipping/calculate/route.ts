@@ -11,38 +11,48 @@ interface ParsedOption {
 }
 
 // Parse the HTML returned by the storefront /envio/ endpoint.
-// Each shipping option is an <input class="js-shipping-method" data-price=".." data-code=".." data-name=".."> inside a <label data-shipping-type="delivery"|"pickup">.
-// For pickup options, extract branch list from <li class="text-capitalize ..."> entries.
+// Cada opción es un <label data-shipping-type="delivery|pickup"> con un
+// <input class="js-shipping-method" data-price/data-code/data-name> adentro.
+// Algunos carriers (p.ej. Correo Argentino Clásico) vienen anidados dentro de
+// <div class="js-other-shipping-options" style="display:none">, así que NO
+// podemos confiar en los `<li>` exteriores. Iteramos directamente sobre los
+// <label data-shipping-type=...> y, para pickup, buscamos las sucursales en
+// el tramo que va hasta el próximo label de shipping.
 function parseShippingHtml(html: string): ParsedOption[] {
   const options: ParsedOption[] = [];
 
-  // Match each <li class="js-shipping-list-item ..."> ... </li> block (pickup and delivery share this structure)
-  const itemRegex = /<li[^>]*class="[^"]*js-shipping-list-item[^"]*"[^>]*>([\s\S]*?)<\/li>(?=\s*(?:<li|<\/ul|\s*<div[^>]*js-toggle|\s*<\/div>))/g;
+  const labelRegex = /<label\b[^>]*data-shipping-type="(delivery|pickup)"[^>]*>([\s\S]*?)<\/label>/g;
 
   let m: RegExpExecArray | null;
-  while ((m = itemRegex.exec(html)) !== null) {
-    const block = m[1];
+  while ((m = labelRegex.exec(html)) !== null) {
+    const type = m[1] as "delivery" | "pickup";
+    const labelBody = m[2];
 
-    const priceMatch = block.match(/data-price="([0-9.]+)"/);
-    const codeMatch = block.match(/data-code="([^"]+)"/);
-    const nameMatch = block.match(/data-name="([^"]+)"/);
-    const typeMatch = block.match(/data-shipping-type="(delivery|pickup)"/);
+    const priceMatch = labelBody.match(/data-price="([0-9.]+)"/);
+    const codeMatch = labelBody.match(/data-code="([^"]+)"/);
+    const nameMatch = labelBody.match(/data-name="([^"]+)"/);
 
-    if (!priceMatch || !codeMatch || !nameMatch || !typeMatch) continue;
+    if (!priceMatch || !codeMatch || !nameMatch) continue;
 
     const opt: ParsedOption = {
       code: codeMatch[1],
       name: decodeHtmlEntities(nameMatch[1]),
       price: parseFloat(priceMatch[1]),
-      type: typeMatch[1] as "delivery" | "pickup",
+      type,
     };
 
-    // For pickup options, extract branch list
-    if (opt.type === "pickup") {
+    if (type === "pickup") {
+      // Las sucursales aparecen después de </label> y antes del próximo
+      // <label data-shipping-type=...> (o del fin del HTML).
+      const tailStart = labelRegex.lastIndex;
+      const rest = html.slice(tailStart);
+      const nextLabelIdx = rest.search(/<label\b[^>]*data-shipping-type=/);
+      const tail = nextLabelIdx === -1 ? rest : rest.slice(0, nextLabelIdx);
+
       const branches: string[] = [];
       const branchRegex = /<li class="text-capitalize[^"]*"[^>]*>([^<]+)<\/li>/g;
       let b: RegExpExecArray | null;
-      while ((b = branchRegex.exec(block)) !== null) {
+      while ((b = branchRegex.exec(tail)) !== null) {
         branches.push(decodeHtmlEntities(b[1].trim()));
       }
       if (branches.length > 0) opt.branches = branches;
