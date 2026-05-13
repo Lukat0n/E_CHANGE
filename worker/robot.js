@@ -527,7 +527,8 @@ export async function createShipment(input) {
             let trackInfo = await extractTrackingFromAll(page);
             if (trackInfo) {
               trackingCode = trackInfo.code;
-              console.log(`[createShipment] tracking detectado sin Generar: ${trackingCode}`);
+              trackingUrl = trackInfo.url || null;
+              console.log(`[createShipment] tracking detectado sin Generar: ${trackingCode} url=${trackingUrl}`);
             }
 
             // Si no había, buscamos el botón Generar
@@ -555,26 +556,17 @@ export async function createShipment(input) {
               if (!generarClicked) {
                 console.log("[createShipment] no encontré botón 'Generar'");
               } else {
-                // Esperar a que aparezca el código en la página (puede tardar)
+                // Esperar a que aparezca el código (con su link) en la página
                 for (let i = 0; i < 10; i++) {
                   await page.waitForTimeout(2000);
                   trackInfo = await extractTrackingFromAll(page);
                   if (trackInfo) {
                     trackingCode = trackInfo.code;
-                    console.log(`[createShipment] tracking detectado tras Generar (intento ${i + 1}): ${trackingCode}`);
+                    trackingUrl = trackInfo.url || null;
+                    console.log(`[createShipment] tracking detectado tras Generar (intento ${i + 1}): ${trackingCode} url=${trackingUrl}`);
                     break;
                   }
                 }
-              }
-            }
-
-            // Construir URL pública. Si parece Correo Argentino (XX#########AR) usamos su tracker.
-            // Si es otro formato (Envío Nube interno) no hay URL pública confiable, mandamos solo el código.
-            if (trackingCode) {
-              if (/^[A-Z]{2}\d{9}AR$/.test(trackingCode)) {
-                trackingUrl = `https://www.correoargentino.com.ar/formularios/e-commerce?id=${trackingCode}`;
-              } else {
-                trackingUrl = null;
               }
             }
           } catch (err) {
@@ -727,31 +719,56 @@ async function fillByPlaceholder(page, placeholderRegex, value) {
 }
 
 /**
- * Busca el código de seguimiento en page + todos los frames. Match estrategias:
- *   1. Texto "Código de seguimiento: XXX" (formato visible en la UI)
- *   2. Formato Correo Argentino: XX#########AR
- *   3. Cualquier código alfanumérico de 8-20 chars cerca de la palabra "seguimiento"
+ * Busca el código de seguimiento en page + todos los frames. Devuelve { code, url }.
  *
- * Devuelve { code } o null.
+ * Estrategia: el SPA muestra el código como link <a href="..."> apuntando al tracker
+ * del carrier (e-pick.com.ar, correoargentino.com.ar, etc.). Capturamos directamente
+ * el href de ese link, así obtenemos el URL real sin tener que construirlo.
  */
 async function extractTrackingFromAll(page) {
   const targets = [page, ...page.frames().filter((f) => f !== page.mainFrame() && !f.url().includes("validator"))];
   for (const t of targets) {
     try {
       const result = await t.evaluate(() => {
+        // 1) Buscar links que apunten a sitios típicos de tracking
+        const trackerHosts = ["e-pick.com.ar", "correoargentino.com.ar", "tracking", "seguimiento"];
+        const allLinks = Array.from(document.querySelectorAll("a[href]"));
+        for (const link of allLinks) {
+          const href = link.href || "";
+          const isTracker = trackerHosts.some((h) => href.toLowerCase().includes(h.toLowerCase()));
+          if (!isTracker) continue;
+          const code = (link.textContent || "").trim();
+          if (code) return { code, url: href };
+        }
+
+        // 2) Fallback: link cerca del texto "Código de seguimiento"
+        const labelEls = Array.from(document.querySelectorAll("*")).filter((el) => {
+          const txt = (el.textContent || "").trim();
+          return /c[oó]digo de seguimiento/i.test(txt) && txt.length < 200;
+        });
+        for (const el of labelEls) {
+          let scope = el.parentElement || el;
+          for (let i = 0; i < 4 && scope; i++) {
+            const link = scope.querySelector("a[href]");
+            if (link) {
+              const code = (link.textContent || "").trim();
+              if (code) return { code, url: link.href };
+            }
+            scope = scope.parentElement;
+          }
+        }
+
+        // 3) Último recurso: match por texto
         const txt = (document.body?.innerText || "").replace(/\s+/g, " ");
-        // 1. "Código de seguimiento: XXX"
-        let m = txt.match(/C[oó]digo de seguimiento[:\s]+([A-Z0-9-]{6,30})/i);
-        if (m) return m[1];
-        // 2. Correo Argentino formato
-        m = txt.match(/\b([A-Z]{2}\d{9}AR)\b/);
-        if (m) return m[1];
-        // 3. Tracking number generic con label "Tracking" o "T&T"
-        m = txt.match(/(?:Tracking|T&T|seguimiento)[:\s]*([A-Z0-9-]{8,30})/i);
-        if (m) return m[1];
+        const m =
+          txt.match(/C[oó]digo de seguimiento[:\s]+([A-Z0-9-]{6,30})/i) ||
+          txt.match(/\b([A-Z]{2}\d{9}AR)\b/) ||
+          txt.match(/(?:Tracking|T&T)[:\s]*([A-Z0-9-]{8,30})/i);
+        if (m) return { code: m[1], url: null };
+
         return null;
       });
-      if (result) return { code: result };
+      if (result) return result;
     } catch {}
   }
   return null;
