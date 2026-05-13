@@ -54,6 +54,14 @@ async function loginToTiendanube(page, targetUrl = "https://gelica.mitiendanube.
     }
   });
 
+  // Loguear responses relevantes (auth/gelica/mitiendanube) para entender la cadena
+  page.on("response", async (resp) => {
+    const u = resp.url();
+    if (u.includes("/auth/") || u.includes("gelica") || u.includes("mitiendanube") || u.includes("/login")) {
+      console.log(`[response] ${resp.status()} ${resp.request().method()} ${u}`);
+    }
+  });
+
   // Navegamos al destino. Tiendanube nos va a redirigir a la pantalla de login
   // con el parámetro login_to seteado, lo que asegura que después de loguear
   // la cadena de redirects nos lleve de vuelta y setee cookies cross-subdomain.
@@ -172,13 +180,31 @@ async function loginToTiendanube(page, targetUrl = "https://gelica.mitiendanube.
     if (waits % 5 === 0) console.log(`[login] esperando redirect, URL actual: ${page.url()}`);
   }
 
-  // Si después de 60s seguimos en www.tiendanube.com, capturamos el contenido
-  // para ver qué hay en /auth/token y debuggear.
+  // Si después de 60s seguimos en www.tiendanube.com, capturamos info detallada
   if (!page.url().includes("mitiendanube.com")) {
     const stuckUrl = page.url();
-    const html = await page.content().catch(() => "");
     console.log("[login] STUCK at:", stuckUrl);
-    console.log("[login] HTML snippet:", html.slice(0, 2000));
+
+    const cookies = await page.context().cookies().catch(() => []);
+    const cookieSummary = cookies.map((c) => `${c.domain}${c.path}: ${c.name}`).join("\n  ");
+    console.log(`[login] COOKIES (${cookies.length}):\n  ${cookieSummary || "(none)"}`);
+
+    const inspect = await page.evaluate(() => ({
+      title: document.title,
+      bodyText: document.body?.innerText?.slice(0, 1500),
+      forms: Array.from(document.forms).map((f) => ({ action: f.action, method: f.method })),
+      metaRefresh: document.querySelector('meta[http-equiv="refresh"]')?.getAttribute("content"),
+      // Buscar links/scripts que contengan "mitiendanube" o "redirect"
+      mtuMentions: document.documentElement.outerHTML.match(/mitiendanube[^"'\s]*/g)?.slice(0, 5),
+      authMentions: document.documentElement.outerHTML.match(/auth\/new-admin[^"'\s]*/g)?.slice(0, 5),
+    })).catch((e) => ({ error: e?.message }));
+    console.log("[login] PAGE INSPECT:", JSON.stringify(inspect, null, 2));
+
+    // Intento manual: si hay una redirección encolada en el HTML, intentar
+    // dispararla via window.location desde dentro del page
+    if (inspect.metaRefresh) {
+      console.log("[login] meta-refresh detectado:", inspect.metaRefresh);
+    }
   }
 
   if (page.url().includes("/login") || page.url().includes("/auth/otp")) {
