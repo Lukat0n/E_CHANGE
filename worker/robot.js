@@ -516,62 +516,80 @@ export async function createShipment(input) {
           console.log(`[createShipment] post-submit URL: ${postSubmitUrl}`);
 
           // Ahora el envío está creado. Buscamos el botón "Generar" para generar la etiqueta.
-          // Después de hacer click, el código de seguimiento aparece en la página o en una URL.
           try {
-            await page.waitForTimeout(3000); // dar tiempo a que cargue la página de detalle
+            await page.waitForTimeout(8000); // damos más tiempo a que cargue la página de detalle
+
+            // Dumpear TODOS los botones visibles (page + frames) para debug
+            const allButtons = await collectAllButtons(page);
+            console.log(`[createShipment] botones visibles en shipping-details:`, JSON.stringify(allButtons.slice(0, 30)));
+
             console.log("[createShipment] buscando botón 'Generar'...");
 
-            // Buscamos en page principal y en frames
+            // Probar múltiples variantes del texto del botón en page + frames
+            const labels = [/^\s*Generar\s*$/i, /Generar etiqueta/i, /Generar\b/i, /Imprimir etiqueta/i, /Generate label/i];
             let generarClicked = false;
-            const candidates = [
-              page.locator('button:has-text("Generar"):not([disabled])').first(),
-              ...page.frames().filter((f) => f !== page.mainFrame() && !f.url().includes("validator"))
-                .map((f) => f.locator('button:has-text("Generar"):not([disabled])').first()),
-            ];
-            for (const c of candidates) {
-              try {
-                if ((await c.count()) > 0 && (await c.isVisible().catch(() => false))) {
-                  // Si "Generar" abre una nueva pestaña/PDF, capturamos el popup
-                  const [newPage] = await Promise.all([
-                    page.context().waitForEvent("page", { timeout: 5000 }).catch(() => null),
-                    c.click({ timeout: 5000 }),
-                  ]);
-                  generarClicked = true;
-                  console.log("[createShipment] 'Generar' clickeado");
+            const allTargets = [page, ...page.frames().filter((f) => f !== page.mainFrame() && !f.url().includes("validator"))];
 
-                  if (newPage) {
-                    await newPage.waitForLoadState("domcontentloaded", { timeout: 30000 }).catch(() => {});
-                    await newPage.waitForTimeout(3000);
-                    const popupUrl = newPage.url();
-                    const popupContent = await newPage.content().catch(() => "");
-                    console.log(`[createShipment] popup URL: ${popupUrl}`);
-                    // Buscar código de seguimiento Correo Argentino (formato XX#########AR)
-                    const trackingMatch = popupContent.match(/\b([A-Z]{2}\d{9}AR)\b/);
-                    if (trackingMatch) {
-                      trackingCode = trackingMatch[1];
-                      trackingUrl = `https://www.correoargentino.com.ar/formularios/e-commerce?id=${trackingCode}`;
-                      console.log(`[createShipment] tracking code: ${trackingCode}`);
+            outer: for (const target of allTargets) {
+              for (const label of labels) {
+                try {
+                  const btn = target.getByRole("button", { name: label }).first();
+                  if ((await btn.count()) > 0 && (await btn.isVisible().catch(() => false))) {
+                    const [newPage] = await Promise.all([
+                      page.context().waitForEvent("page", { timeout: 8000 }).catch(() => null),
+                      btn.click({ timeout: 5000 }),
+                    ]);
+                    generarClicked = true;
+                    console.log(`[createShipment] clickeé botón matching ${label} en ${target === page ? "page" : "frame"}`);
+
+                    if (newPage) {
+                      await newPage.waitForLoadState("domcontentloaded", { timeout: 30000 }).catch(() => {});
+                      await newPage.waitForTimeout(4000);
+                      const popupUrl = newPage.url();
+                      const popupContent = await newPage.content().catch(() => "");
+                      console.log(`[createShipment] popup URL: ${popupUrl}`);
+                      const trackingMatch = popupContent.match(/\b([A-Z]{2}\d{9}AR)\b/);
+                      if (trackingMatch) {
+                        trackingCode = trackingMatch[1];
+                        trackingUrl = `https://www.correoargentino.com.ar/formularios/e-commerce?id=${trackingCode}`;
+                        console.log(`[createShipment] tracking code (popup): ${trackingCode}`);
+                      } else {
+                        console.log(`[createShipment] no se encontró tracking code en popup. URL: ${popupUrl}`);
+                      }
+                    } else {
+                      // No popup — esperar y buscar en page actual
+                      await page.waitForTimeout(6000);
+                      const content = await page.content().catch(() => "");
+                      const trackingMatch = content.match(/\b([A-Z]{2}\d{9}AR)\b/);
+                      if (trackingMatch) {
+                        trackingCode = trackingMatch[1];
+                        trackingUrl = `https://www.correoargentino.com.ar/formularios/e-commerce?id=${trackingCode}`;
+                        console.log(`[createShipment] tracking code (page): ${trackingCode}`);
+                      } else {
+                        // Probar también en frames
+                        for (const f of page.frames()) {
+                          if (f === page.mainFrame() || f.url().includes("validator")) continue;
+                          const fc = await f.content().catch(() => "");
+                          const m = fc.match(/\b([A-Z]{2}\d{9}AR)\b/);
+                          if (m) {
+                            trackingCode = m[1];
+                            trackingUrl = `https://www.correoargentino.com.ar/formularios/e-commerce?id=${trackingCode}`;
+                            console.log(`[createShipment] tracking code (frame ${f.url()}): ${trackingCode}`);
+                            break;
+                          }
+                        }
+                      }
                     }
-                  } else {
-                    // No popup, esperar y buscar en la página actual
-                    await page.waitForTimeout(5000);
-                    const content = await page.content().catch(() => "");
-                    const trackingMatch = content.match(/\b([A-Z]{2}\d{9}AR)\b/);
-                    if (trackingMatch) {
-                      trackingCode = trackingMatch[1];
-                      trackingUrl = `https://www.correoargentino.com.ar/formularios/e-commerce?id=${trackingCode}`;
-                      console.log(`[createShipment] tracking code en página: ${trackingCode}`);
-                    }
+                    break outer;
                   }
-                  break;
+                } catch (e) {
+                  console.log(`[createShipment] intento con ${label} falló:`, e?.message);
                 }
-              } catch (e) {
-                console.log("[createShipment] candidate falló:", e?.message);
               }
             }
 
             if (!generarClicked) {
-              console.log("[createShipment] no encontré botón 'Generar' (probablemente la etiqueta hay que generarla manual desde Tiendanube)");
+              console.log("[createShipment] no encontré botón 'Generar'. Botones visibles arriba.");
             }
           } catch (err) {
             console.log("[createShipment] error generando etiqueta:", err?.message);
@@ -720,6 +738,61 @@ async function fillByPlaceholder(page, placeholderRegex, value) {
   );
 
   return { ...result, value };
+}
+
+/**
+ * Recolecta todos los botones visibles (page principal + frames + shadow DOM).
+ * Útil para debug cuando no encontramos un botón que esperábamos.
+ */
+async function collectAllButtons(page) {
+  const results = [];
+  // Botones del documento principal
+  try {
+    const main = await page.evaluate(() => {
+      const found = [];
+      function walk(root) {
+        const btns = root.querySelectorAll ? root.querySelectorAll('button, [role="button"], a') : [];
+        for (const el of btns) {
+          const visible = !!(el.offsetParent || el.getClientRects?.().length);
+          if (visible) {
+            found.push({
+              tag: el.tagName.toLowerCase(),
+              text: (el.textContent || "").trim().slice(0, 80),
+              disabled: el.disabled || el.getAttribute?.("aria-disabled") === "true",
+            });
+          }
+        }
+        const all = root.querySelectorAll ? root.querySelectorAll("*") : [];
+        for (const el of all) if (el.shadowRoot) walk(el.shadowRoot);
+      }
+      walk(document);
+      return found;
+    });
+    results.push(...main.map((b) => ({ ...b, scope: "page" })));
+  } catch {}
+  // Botones de cada frame
+  for (const frame of page.frames()) {
+    if (frame === page.mainFrame() || frame.url().includes("validator")) continue;
+    try {
+      const inFrame = await frame.evaluate(() => {
+        const found = [];
+        const btns = document.querySelectorAll('button, [role="button"], a');
+        for (const el of btns) {
+          const visible = !!(el.offsetParent || el.getClientRects?.().length);
+          if (visible) {
+            found.push({
+              tag: el.tagName.toLowerCase(),
+              text: (el.textContent || "").trim().slice(0, 80),
+              disabled: el.disabled || el.getAttribute?.("aria-disabled") === "true",
+            });
+          }
+        }
+        return found;
+      });
+      results.push(...inFrame.map((b) => ({ ...b, scope: `frame:${frame.url().slice(0, 60)}` })));
+    } catch {}
+  }
+  return results;
 }
 
 /**
