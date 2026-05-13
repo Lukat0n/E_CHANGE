@@ -328,46 +328,75 @@ export async function createShipment(input) {
     if (!page.url().startsWith(url.split("#")[0])) {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
     }
-    await page.waitForTimeout(6000); // SPA tarda en renderizar el form
+    // El SPA tarda en hidratar e ir renderizando inputs
+    await page.waitForTimeout(8000);
+
+    const filled = {};
 
     if (mode === "domicilio") {
-      // Paso 1: zip + paquete
-      const zipInput = page
-        .locator('input[placeholder*="código postal" i], input[placeholder*="codigo postal" i]')
-        .filter({ visible: true })
-        .first();
-      await zipInput.waitFor({ state: "visible", timeout: 15000 });
-      await zipInput.fill(String(destZip));
-
-      // Dimensiones por label "Alto", "Ancho", "Profundidad", "Peso"
-      await fillByLabel(page, "Alto", String(alto));
-      await fillByLabel(page, "Ancho", String(ancho));
-      await fillByLabel(page, "Profundidad", String(profundidad));
-      if (peso) await fillByLabel(page, "Peso", String(peso));
-      if (valor) await fillByLabel(page, "Monto total abonado", String(valor));
+      filled.codigoPostal = await typeIntoInput(page, /codigo postal|código postal/i, String(destZip), { byPlaceholder: true });
+      filled.alto = await typeIntoInput(page, /^alto$/i, String(alto));
+      filled.ancho = await typeIntoInput(page, /^ancho$/i, String(ancho));
+      filled.profundidad = await typeIntoInput(page, /^profundidad$/i, String(profundidad));
+      if (peso) filled.peso = await typeIntoInput(page, /^peso$/i, String(peso));
+      if (valor) filled.valor = await typeIntoInput(page, /monto total/i, String(valor));
     } else {
-      // Sucursal: destinatario + paquete + valor
-      if (recipient.nombre) await fillByLabel(page, "Nombre", recipient.nombre);
-      if (recipient.apellido) await fillByLabel(page, "Apellido", recipient.apellido);
-      if (recipient.email) await fillByLabel(page, "Email", recipient.email);
-      if (recipient.telefono) await fillByLabel(page, "Teléfono", recipient.telefono);
-      await fillByLabel(page, "Alto", String(alto));
-      await fillByLabel(page, "Ancho", String(ancho));
-      await fillByLabel(page, "Profundidad", String(profundidad));
-      if (peso) await fillByLabel(page, "Peso", String(peso));
-      if (valor) await fillByLabel(page, "Valor declarado", String(valor));
+      if (recipient.nombre) filled.nombre = await typeIntoInput(page, /^nombre$/i, recipient.nombre);
+      if (recipient.apellido) filled.apellido = await typeIntoInput(page, /^apellido$/i, recipient.apellido);
+      if (recipient.email) filled.email = await typeIntoInput(page, /^email/i, recipient.email);
+      if (recipient.telefono) filled.telefono = await typeIntoInput(page, /tel[eé]fono/i, recipient.telefono);
+      filled.alto = await typeIntoInput(page, /^alto$/i, String(alto));
+      filled.ancho = await typeIntoInput(page, /^ancho$/i, String(ancho));
+      filled.profundidad = await typeIntoInput(page, /^profundidad$/i, String(profundidad));
+      if (peso) filled.peso = await typeIntoInput(page, /^peso$/i, String(peso));
+      if (valor) filled.valor = await typeIntoInput(page, /valor declarado/i, String(valor));
     }
 
-    // DRY RUN: no apretamos Continuar. Tomamos screenshot.
-    await page.waitForTimeout(1500);
+    // DRY RUN: no apretamos Continuar. Tomamos screenshot del estado actual.
+    await page.waitForTimeout(2000);
     const dump = await debugDump(page, `Paso 1 llenado (DRY RUN). Modo: ${mode}.`);
     return {
       ...dump,
       dryRun: true,
+      filled,
       inputUsed: { mode, destZip, alto, ancho, profundidad, peso, valor, recipient },
     };
   } finally {
     await browser.close();
+  }
+}
+
+/**
+ * Intenta llenar un input ubicándolo por:
+ * 1. getByLabel (si el HTML tiene <label for="...">)
+ * 2. getByPlaceholder
+ * 3. xpath: label cercano seguido de input
+ *
+ * Devuelve true si llenó, false si no encontró el campo.
+ */
+async function typeIntoInput(page, textRegex, value, { byPlaceholder = false } = {}) {
+  // Estrategia 1: getByLabel (Tiendanube probablemente usa esto)
+  let input = page.getByLabel(textRegex).first();
+  if ((await input.count()) === 0 || !(await input.isVisible().catch(() => false))) {
+    // Estrategia 2: getByPlaceholder
+    input = page.getByPlaceholder(textRegex).first();
+  }
+  if ((await input.count()) === 0 || !(await input.isVisible().catch(() => false))) {
+    // Estrategia 3: locator con role textbox y label
+    input = page.getByRole("textbox", { name: textRegex }).first();
+  }
+  if ((await input.count()) === 0 || !(await input.isVisible().catch(() => false))) {
+    console.log(`[typeIntoInput] no encontré input para ${textRegex}`);
+    return { found: false, value };
+  }
+
+  try {
+    await input.click({ timeout: 5000 });
+    await input.fill(value);
+    return { found: true, value };
+  } catch (err) {
+    console.log(`[typeIntoInput] fill falló para ${textRegex}:`, err?.message);
+    return { found: false, value, error: err?.message };
   }
 }
 

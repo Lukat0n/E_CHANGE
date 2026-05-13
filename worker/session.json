@@ -1,0 +1,556 @@
+{
+  "cookies": [
+    {
+      "name": "_WORKER_NODE",
+      "value": "core-inst-10-1-195-45",
+      "domain": "www.tiendanube.com",
+      "path": "/auth",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_WORKER_NODE",
+      "value": "core-inst-10-1-237-148",
+      "domain": "www.tiendanube.com",
+      "path": "/api",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__cf_bm",
+      "value": "ylfe.l0vqyPcYLbAn28WlNFTkUIorbIUuVuJz3flQiM-1778633918.0895443-1.0.1.1-324nB6Xu97mJq55G3Lzoj4EECXD8sOoWjqkx3h31uGnxuQ5dI6CqphiAaH0flwgVk_PfNm.Pna.xb7GUOSNUqzPOMnHgAKQINc79Ux2dbKgRDLyGanewN1l3sca0W55V",
+      "domain": ".mitiendanube.com",
+      "path": "/",
+      "expires": 1778635717.511742,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "admn_session",
+      "value": "3XDGv1S8tz78IYDbYqDpCagL4iLqoJBpGKRd5keT",
+      "domain": ".gelica.mitiendanube.com",
+      "path": "/",
+      "expires": 1779929965.258132,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_clck",
+      "value": "3892lv%5E2%5Eg60%5E0%5E2324",
+      "domain": ".mitiendanube.com",
+      "path": "/",
+      "expires": 1810169919,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__cf_bm",
+      "value": "cgwH2ksQH3yeoeyBdm0es9sijJgXKmegLeUjLhQWqjg-1778633920.7450094-1.0.1.1-iYTTr.JaC5918t1JIY4Jk3oPu8CkWxIifOkd1qLmskGG1pbiqeC6hr7lEcgU_g5MZXfCCj1E7kw2lv33rxtYDhNuPMhlY4mE2udcJfOXfenuFx5VVoSeXYSk5n_g35VB",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1778635720.149491,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "_ga",
+      "value": "GA1.1.2029834886.1778633920",
+      "domain": ".mitiendanube.com",
+      "path": "/",
+      "expires": 1813193966.107274,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "ab",
+      "value": "olark%3D0",
+      "domain": "www.tiendanube.com",
+      "path": "/",
+      "expires": 1781225950.327538,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "site_session",
+      "value": "571858452f2d591456ad08b03d514ad4918aeaee~23ab17135d92e8a12e799cbe84e12c8195101862820b76ac2326ce8914d1a4c5",
+      "domain": ".www.tiendanube.com",
+      "path": "/",
+      "expires": 1810191564.47697,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_vwo_uuid_v2",
+      "value": "DCF5873CB0264FCFE151A0AC2A57229DB|7960bd915de70517bfccb41a94279d81",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1810256350,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_vwo_uuid",
+      "value": "DCF5873CB0264FCFE151A0AC2A57229DB",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1810190873,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_vis_opt_s",
+      "value": "1%7C",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1787273921,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_vis_opt_test_cookie",
+      "value": "1",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_clck",
+      "value": "1tymusd%5E2%5Eg60%5E0%5E2324",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1810169922,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_ga",
+      "value": "GA1.1.78687492.1778633923",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1813193950.423449,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__hstc",
+      "value": "5728684.43f2497a10997e8d494282ef5591949b.1778633923066.1778633923066.1778633923066.1",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1794185950,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "hubspotutk",
+      "value": "43f2497a10997e8d494282ef5591949b",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1794185950,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__hssrc",
+      "value": "1",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_vwo_ds",
+      "value": "3%3At_0%2Ca_0%3A0%241778633921%3A94.03540141%3A%3A%3A%3A2%3A1778633921%3A1778633921%3A1",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1783817950,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_fbp",
+      "value": "fb.1.1778633923239.266530491769077078",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1786409960,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_tt_enable_cookie",
+      "value": "1",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1812329950,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_ttp",
+      "value": "01KRFDFPW1T70H5PGA2AB1N2HP_.tt.1",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1812329950,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_gcl_au",
+      "value": "1.1.1388652312.1778633922.462453419.1778633941.1778633949",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1786409922,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "amplitude_idtiendanube.com",
+      "value": "eyJkZXZpY2VJZCI6IjI4MGJjYjY3LWQ2OTktNGM0Yy04NjVkLTIwZGZhNmE2MDdmYVIiLCJ1c2VySWQiOiJudWxsIiwib3B0T3V0IjpmYWxzZSwic2Vzc2lvbklkIjoxNzc4NjMzOTIxMzc4LCJsYXN0RXZlbnRUaW1lIjoxNzc4NjMzOTUwNDAyLCJldmVudElkIjoxLCJpZGVudGlmeUlkIjoxLCJzZXF1ZW5jZU51bWJlciI6Mn0=",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1813193950.402339,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "__hssc",
+      "value": "5728684.2.1778633923066",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1778635750,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_uetsid",
+      "value": "e37bf7104e6611f1b1f961335ab39eac",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1778720350,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_uetvid",
+      "value": "e37c09404e6611f194b665779118ec0f",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1812329950,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "http_referrer",
+      "value": "99ee6c01c2bbff63d80631d966ca29ec2a8ddcd8~www.tiendanube.com%2Flogin",
+      "domain": "www.tiendanube.com",
+      "path": "/",
+      "expires": 1779497950.807587,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "utm_tags",
+      "value": "0fed8564bf502ac6a10e7180a89992f3b7aa8d7d~%5B%7B%22http_referrer%22%3A%22gelica.mitiendanube.com%5C%2F%22%2C%22landing_page%22%3A%22www.tiendanube.com%5C%2Flogin%22%2C%22devicemodel%22%3A%22login_to%22%2C%22date%22%3A%222026-05-13%2000%3A58%3A43%22%7D%2C%7B%22http_referrer%22%3A%22www.tiendanube.com%5C%2Flogin%22%2C%22landing_page%22%3A%22www.tiendanube.com%5C%2Fauth%5C%2Ftoken%22%2C%22devicemodel%22%3A%22%22%2C%22date%22%3A%222026-05-13%2000%3A59%3A11%22%7D%5D",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1794185950.807679,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "None"
+    },
+    {
+      "name": "_WORKER_NODE",
+      "value": "core-inst-10-1-195-45",
+      "domain": "www.tiendanube.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_clsk",
+      "value": "cmzo71%5E1778633950861%5E2%5E1%5Ek.clarity.ms%2Fcollect",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1778720350,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "ttcsid",
+      "value": "1778633923460::ziYBYYXOG-icNwpfksNT.1.1778633960181.0::1.26103.27311::36717.7.218.579::0.0.0",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1812329960,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "ttcsid_D6PAL43C77U9OLTLC3D0",
+      "value": "1778633923460::biXNjgGF3mIynABb5QAj.1.1778633960181.1",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1812329960,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_vwo_sn",
+      "value": "0%3A2%3A%3A%3A%3A%3A36",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1778635761,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "trust_device_7992951",
+      "value": "9dba77cf33bdc3ebe545c270dfc20759e90692e2~eyJpdiI6IkMyNUdNZXZWQVpzNENMSVV6WWs4MlE9PSIsInZhbHVlIjoiMUpRUVBFbFphaG5xTUxBTmlYbWVVNnl1Q0N1azlucVdnYzVWaHV2d2V6Q3Q3cGdXK3BoVm84T0pHWC9GSXo5ZFZjZFl0S0draFBlN1RaRlhxNkRnTlE9PSIsIm1hYyI6ImFiNTJkNjk1Y2VmNzc0NThlZTYxY2Q1ZTQwOTJhYzY1YjQyYWQxOGIyNzlhNDRmYzFjNzdhNWRlNjE3ZjE3NWUifQ%3D%3D",
+      "domain": ".www.tiendanube.com",
+      "path": "/",
+      "expires": 1781225964.476878,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "remembered_accounts",
+      "value": "d0e97e78805a69c3a1b259ddbc7dbebf32d64cbf~bd07050fb4a1cf82db05a2845b02d5a58e542f8945fa26d2cd71492118a61c93.eyJhY2NvdW50cyI6W3sicHJvdmlkZXIiOiJwYXNzd29yZCIsImVtYWlsIjoicm9ib3QuZ2VsaWNhLmVudmlvc0BnbWFpbC5jb20iLCJuYW1lIjoiIiwic3RvcmVOYW1lIjoiR2VsaWNhIiwicGljdHVyZSI6bnVsbCwibGFzdFVzZWQiOjE3Nzg2MzM5NjF9XX0%3D",
+      "domain": ".www.tiendanube.com",
+      "path": "/",
+      "expires": 1781225964.476949,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_ga_HKNYBFWPVK",
+      "value": "GS2.1.s1778633923$o1$g1$t1778633965$j18$l0$h0",
+      "domain": ".tiendanube.com",
+      "path": "/",
+      "expires": 1813193965.529232,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "amp_ee2859",
+      "value": "EWKb9dq2pfYqmMxT2udT8K.NTAwMjA2Nw==..1jofdh15h.1jofdh15i.0.1.1",
+      "domain": ".mitiendanube.com",
+      "path": "/",
+      "expires": 1810169966,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "amp_fa4c31",
+      "value": "vutoZoRaYRArtKQLXbpkXG.NTAwMjA2Nw==..1jofdh15e.1jofdheue.4.1.5",
+      "domain": ".mitiendanube.com",
+      "path": "/",
+      "expires": 1810169980,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_clsk",
+      "value": "1wxvbos%5E1778633981400%5E4%5E0%5Ek.clarity.ms%2Fcollect",
+      "domain": ".mitiendanube.com",
+      "path": "/",
+      "expires": 1778720381,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_ga_7RDWSPWHLK",
+      "value": "GS2.1.s1778633920$o1$g1$t1778633981$j59$l0$h0",
+      "domain": ".mitiendanube.com",
+      "path": "/",
+      "expires": 1813193981.882717,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "_dd_s",
+      "value": "rum=0&expire=1778634881879&logs=1&id=cf5ae6fd-1508-4f86-bf2a-f282f8233f41&created=1778633919486",
+      "domain": "gelica.mitiendanube.com",
+      "path": "/",
+      "expires": 1778634883,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "None"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://gelica.mitiendanube.com",
+      "localStorage": [
+        {
+          "name": "CapacitorStorage.onboarding_promote_finished_logged-5002067",
+          "value": "\"true\""
+        },
+        {
+          "name": "amplitude_unsent_fa4c31ed417baa2e0d5629037e24e917",
+          "value": "[]"
+        },
+        {
+          "name": "CapacitorStorage.onboarding-pos-type-5002067",
+          "value": "\"\\\"online_store\\\"\""
+        },
+        {
+          "name": "CapacitorStorage.locale",
+          "value": "\"es-AR\""
+        },
+        {
+          "name": "CapacitorStorage.auth",
+          "value": "{\"accessToken\":\"ed1bf64dac831341ea1e683142c4a15953468ea01de949e501c7724e618334ab\",\"storeId\":\"5002067\",\"name\":\"Gelica\",\"defaultLanguage\":\"es\",\"defaultCurrency\":\"ARS\",\"languages\":[\"es\"],\"country\":\"AR\",\"url\":\"https://gelica.com.ar\",\"roles\":[\"orders\",\"nuvem_envio\",\"products\"],\"tags\":[\"new-admin-addressing-rule-v2\",\"new-admin-catalog-audit\",\"new-admin-catalog-cud-products-bulk-update-price\",\"new-admin-catalog-hidding-categories\",\"new-admin-catalog-hiding-variants\",\"new-admin-catalog-ms-search\",\"new-admin-catalog-unstable-api-v2\",\"new-admin-catalog-variants-improved\",\"new-admin-checkout-hide-only-mobile-payment-options\",\"new-admin-checkout-orders-tax-enabled\",\"new-admin-custom-ranges\",\"new-admin-custom-shipping-option-name-enabled\",\"new-admin-custom-shipping-restrictions\",\"new-admin-enable-all-migrated-pages\",\"new-admin-exclude-bot-suspect\",\"new-admin-export-orders-payment-segment\",\"new-admin-marketing-automation\",\"new-admin-multicd\",\"new-admin-multicd-inventory\",\"new-admin-multicd-product-detail\",\"new-admin-online-custom-promotion-label\",\"new-admin-online-search-order\",\"new-admin-order-detail\",\"new-admin-orders-auto-cancel\",\"new-admin-orders-bulk-sync-replication-bff-enabled\",\"new-admin-orders-chargeback-enabled\",\"new-admin-orders-disputes-v1-1-enabled\",\"new-admin-orders-disputes-v1-enabled\",\"new-admin-print-page\",\"new-admin-refund-external-partners\",\"new-admin-revamp-menu-v1-b\",\"new-admin-saved-search-views\",\"new-admin-saved-search-views-v2\",\"new-admin-shipping-async-documents\",\"new-admin-shipping-location-tag\",\"new-admin-shipping-methods-v2\",\"new-admin-subscriptions-enabled\",\"new-admin-web-abandoned-carts\",\"new-admin-web-abandoned_list\",\"new-admin-web-order\",\"new-admin-web-order-detail\",\"new-admin-web-order-list\",\"new-admin-web-orders\",\"new-admin-web-orders-export\",\"new-admin-web-orders_download\",\"new-admin-web-stats-v2\",\"new-admin-whatsapp-notifications\",\"new-admin-draft-orders\",\"new-admin-abandoned-carts\",\"new-admin-products-all-tags\",\"new-admin-web-themes\",\"new-admin-upsell-flow-ab-test-a\",\"nuvempago\",\"nuvempago-new-cohort-activated\",\"wallet-express-checkout\",\"quito-fbe-v2\",\"smart-payment\",\"online-current-theme-survey\",\"update-app-notifications-alert\",\"patagonia-theme\",\"ai-product-image-edit-enabled\",\"ai-product-image-edit-custom-background-enabled\",\"ai-smart-weight-dimensions-enabled\",\"ai-product-feedback-enabled\",\"nuvem-chat-menu-enabled\",\"prm-promotions-advanced-combinations\",\"nuvem-chat-waitlist\",\"catalog-product-hashed-slug\",\"new-whatsapp-admin\"],\"plan\":{\"id\":\"2499\",\"features\":[\"enable_site\",\"enable_fb\",\"verified\",\"i18n_enabled\",\"discounts\",\"carrier_shipping\",\"table_shipping\",\"anti_fraud\",\"direct_payment\",\"itau\",\"adwords\",\"mass_upload\",\"powered_by\",\"custom_domain\",\"payment_methods\",\"stats\",\"advanced_stats\",\"seo_optimized\",\"seo_advanced\",\"ipn\",\"orders_export\",\"orders_bulk_actions\",\"packing_slip\",\"customer_support\",\"mobile_theme\",\"custom_theme_capable\",\"customer_accounts\",\"adwords_editor\",\"product_feeds\",\"email_marketing\",\"ebit\",\"meli_capable\",\"multiuser\",\"admin_access\",\"paghiper\",\"abandoned_carts\",\"transparent_checkout\",\"marketing_catalog\",\"cs_whatsapp\",\"payment_gateway\"],\"limitingFeatures\":{\"bulk_actions\":1,\"search_filter_actions\":1,\"monthly_orders_export\":-1,\"monthly_abandoned_carts_export\":-1,\"monthly_catalog_export\":-1,\"monthly_clients_export\":-1,\"max_custom_payments\":-1,\"max_shipping_customs\":1,\"max_shipping_internationals\":1,\"metafields_orders\":1,\"metafields_customers\":1,\"metafields_products_variants_admin_config\":1,\"metafields_products_variants_admin_filter\":1,\"metafields_products_variants_storefront\":1,\"new_admin_stats\":3,\"user_permissions\":1,\"max_users\":-1,\"only_shipping_native\":0,\"only_nuvem_pago\":0,\"allow_custom_domain\":1,\"google_tag_manager\":1,\"ai_tier\":\"tier-3\",\"custom_theme_capable\":1,\"hide_categories\":1,\"abandoned_carts_automated_emails\":1,\"native_videos\":1,\"max_products\":-1,\"max_transactions_quantity\":-1,\"max_transaction_value\":-1,\"max_transaction_currency\":\"ARS\",\"max_images\":-1,\"payment_interval\":1,\"max_transactions\":-1,\"max_contacts\":-1,\"score\":0,\"max_branches\":-1,\"dropshipping\":1,\"cs_whatsapp\":1,\"edit_orders\":1,\"cs_phone_call\":0,\"max_locations\":3,\"plan_pago_nube\":\"arg-escala-oct-2024\",\"ne_bulk_actions\":1,\"nuvem_chat_tier\":\"tier-3\",\"google_analytics_4\":1,\"ma_nuvem_marketing\":1,\"max_saved_searches\":30,\"orders_auto_cancel\":1,\"ne_download_reports\":1,\"only_layout_default\":0,\"metafields_categories\":1,\"ne_detached_shipments\":1,\"ne_search_and_filters\":1,\"order_products_filter\":1,\"ai_product_description\":\"tier-1\",\"payment_methods_sorter\":1,\"only_nuvem_pago_payment\":0,\"metafields_products_admin\":1,\"price_tables_admin_config\":3,\"shipping_apps_restrictions\":1,\"custom_shipping_option_name\":1,\"fulfillment_order_label_api\":1,\"ne_premium_delivery_options\":1,\"subscription_recurring_orders\":1,\"metafields_products_storefront\":1,\"metafields_products_admin_config\":1,\"metafields_products_admin_filter\":1,\"price_tables_orders_admin_filter\":1,\"price_tables_customers_admin_filter\":1},\"transactionFee\":0.7,\"isNext\":false,\"isEvolucion\":false,\"isFreemium\":true,\"isFreePlan\":false,\"niceName\":\"plan-C\",\"name\":\"Escala\",\"commercialName\":\"Escala\",\"context\":\"AR_2025_october_freemium\",\"level\":3},\"compatibilityVersion\":\"0.6.27\",\"adminDisabled\":false,\"transactionFeeAdminDisabled\":false,\"remainingDaysToExpiration\":3,\"adminDisabledReason\":\"cancelled\",\"canChangePlanForFree\":true,\"createdAt\":1721870938000,\"user\":{\"id\":\"7992951\",\"name\":\"\",\"firstName\":\"\",\"lastName\":\"\",\"email\":\"robot.gelica.envios@gmail.com\",\"isEmployee\":false,\"isPartner\":false,\"isMain\":false,\"userConfirmed\":true,\"isSso\":false,\"hasPassword\":true},\"phone\":\"+54 11 54224135\",\"pathsWithVerification\":[],\"partnerId\":null,\"mainUserId\":5183232,\"currentSegment\":\"top-seller\",\"isTrial\":false,\"currentTheme\":\"brasilia\",\"successPortfolio\":false,\"npsElegible\":false,\"showExpirationBanner\":false,\"canEnterAdmin\":true,\"isAlmostExpired\":false,\"tiendanubeAdminUrl\":\"https://gelica.mitiendanube.com\",\"storePaymentDiscount\":null,\"hasFirstPayment\":true,\"isFreeDaysApplicable\":false,\"adminDisableDate\":\"2026-05-26\",\"storefrontDisableDate\":\"2026-06-05\",\"rolesWithoutFilter\":[\"orders\",\"nuvem_envio\",\"products\"],\"status\":\"ok\",\"qualityLeadShouldNotify\":false,\"visitedAfterPaying\":false,\"needsCloudflareMigration\":false,\"cloudflareBlocked\":false,\"cloudflareHardBlocked\":false,\"cloudflareHardBlockOptions\":null,\"isSeller\":true,\"hasFtp\":false,\"timezone\":\"America/Argentina/Buenos_Aires\",\"mobile\":{\"requiredForceUpdate\":false,\"requiredSuggestedUpdate\":false}}"
+        },
+        {
+          "name": "amplitude_unsent_identify_ee2859b2ae1c8d800fdfc6a1b2b90c41_nuvempago_commons",
+          "value": "[]"
+        },
+        {
+          "name": "amplitude_unsent_ee2859b2ae1c8d800fdfc6a1b2b90c41_nuvempago_commons",
+          "value": "[]"
+        },
+        {
+          "name": "CapacitorStorage.pre-onboarding-questionnaire-completed-5002067",
+          "value": "\"true\""
+        },
+        {
+          "name": "60ca3a4b05e15600d5ac7d74.clientId",
+          "value": "ef5e32f7f49e46df9ef8b8f026147b00"
+        },
+        {
+          "name": "CapacitorStorage.onboarding_setup_finished_logged-5002067",
+          "value": "\"true\""
+        },
+        {
+          "name": "CapacitorStorage.onboarding_promote_show_logged-5002067",
+          "value": "\"true\""
+        },
+        {
+          "name": "amplitude_unsent_identify_fa4c31ed417baa2e0d5629037e24e917",
+          "value": "[]"
+        }
+      ]
+    },
+    {
+      "origin": "https://www.tiendanube.com",
+      "localStorage": [
+        {
+          "name": "6633cefb27de4205723f8fdd_eventQueue",
+          "value": "[]"
+        },
+        {
+          "name": "_uetvid_exp",
+          "value": "Mon, 07 Jun 2027 00:59:10 GMT"
+        },
+        {
+          "name": "amplitude_unsent",
+          "value": "[]"
+        },
+        {
+          "name": "_vwo_614150_config",
+          "value": "{}"
+        },
+        {
+          "name": "_gcl_ls",
+          "value": "{\"schema\":\"gcl\",\"version\":1,\"gcl_ctr\":{\"value\":{\"value\":4,\"timeouts\":0,\"errors\":0,\"eopCount\":0,\"creationTimeMs\":1778633965532},\"expires\":1786409965532}}"
+        },
+        {
+          "name": "_grecaptcha",
+          "value": "09AKhCRwi8lSwIw-tICvhNRL0MRIj0GWmFFbb0in2Psn9jOd0-0OHvKFGSk1xEaMyxklGNVNloASSS2HvMMp-bNpNxJZrzpk9fs-E_c-cNQNvufEyRZFlR-kDhdF13_dg6"
+        },
+        {
+          "name": "_uetsid",
+          "value": "e37bf7104e6611f1b1f961335ab39eac"
+        },
+        {
+          "name": "lastExternalReferrerTime",
+          "value": "1778633923232"
+        },
+        {
+          "name": "_vwo_nls_q_614150",
+          "value": "[]"
+        },
+        {
+          "name": "_vwo_visProps",
+          "value": "{}"
+        },
+        {
+          "name": "_uetsid_exp",
+          "value": "Thu, 14 May 2026 00:59:10 GMT"
+        },
+        {
+          "name": "_uetvid",
+          "value": "e37c09404e6611f194b665779118ec0f"
+        },
+        {
+          "name": "lastExternalReferrer",
+          "value": "other"
+        },
+        {
+          "name": "6633cefb27de4205723f8fdd_canTrack",
+          "value": "{\"data\":false,\"expireTime\":1778720350974}"
+        },
+        {
+          "name": "amplitude_unsent_identify",
+          "value": "[]"
+        },
+        {
+          "name": "apolloAnonId",
+          "value": "049ef5ea-c025-4e70-ae8b-c315fe51892b"
+        },
+        {
+          "name": "li_adsId",
+          "value": "7f6c2916-aaa3-4872-9428-861d0ab40f42"
+        },
+        {
+          "name": "vwoSn",
+          "value": "{\"cu\":\"https%3A%2F%2Fwww.tiendanube.com%2Flogin%3Flogin_to%3Dhttps%253A%252F%252Fgelica.mitiendanube.com%252Fadmin%252Fauth%252Fnew-admin%252F%253Fredirect_uri%253Dhttps%25253A%25252F%25252Fgelica.mitiendanube.com%25252Fadmin\",\"r\":\"https%3A%2F%2Fgelica.mitiendanube.com%2F\",\"lt\":\"1778633961\",\"v\":\"0.1.0\"}"
+        }
+      ]
+    }
+  ]
+}

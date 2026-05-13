@@ -135,6 +135,38 @@ export default function AdminDashboard({
     }
   }
 
+  async function testCreateShipment() {
+    setTestingRobot(true);
+    setRobotResult(null);
+    setRobotDebug(null);
+    try {
+      const res = await fetch("/api/worker/shipment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "domicilio",
+          destZip: "1425",
+          alto: 10,
+          ancho: 15,
+          profundidad: 10,
+          peso: 500,
+          valor: 15000,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) {
+        setRobotResult(`❌ ${data.error || `HTTP ${res.status}`}`);
+      } else {
+        setRobotResult(`🧪 Dry run OK — ${data.url}`);
+      }
+      setRobotDebug(data);
+    } catch (err) {
+      setRobotResult(`❌ ${err instanceof Error ? err.message : "Error"}`);
+    } finally {
+      setTestingRobot(false);
+    }
+  }
+
   async function inspectRobotUrl() {
     setTestingRobot(true);
     setRobotResult(null);
@@ -320,6 +352,13 @@ export default function AdminDashboard({
               className="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-blue-700 transition disabled:opacity-50"
             >
               {testingRobot ? "..." : "Inspeccionar URL"}
+            </button>
+            <button
+              onClick={testCreateShipment}
+              disabled={testingRobot}
+              className="bg-green-600 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-green-700 transition disabled:opacity-50"
+            >
+              {testingRobot ? "..." : "Probar dry run envío"}
             </button>
           </div>
 
