@@ -367,7 +367,12 @@ export default function HomePage() {
             shippingMode: deliveryMode === "sucursal" ? "sucursal" : "domicilio",
             shippingMethodCode: selectedShipping?.code || "reenvio",
             shippingMethodName: selectedShipping?.name || orderInfo.shippingOptionName || orderInfo.shippingCarrier || "Reenvío",
-            shippingCost: selectedShipping ? publicPrice(selectedShipping.price) : (orderInfo.shippingCostOwner != null ? publicPrice(orderInfo.shippingCostOwner) : null),
+            // Cobrar el costo real del envío original (shipping_cost_owner) + 6%.
+            // No usamos selectedShipping.price porque ese precio incluye el markup
+            // que Tiendanube agrega al cliente final (no es lo que paga el comercio).
+            shippingCost: orderInfo.shippingCostOwner != null
+              ? publicPrice(orderInfo.shippingCostOwner)
+              : (selectedShipping ? publicPrice(selectedShipping.price) : null),
           }),
           ...(claimType === "cambio" && {
             // For presencial we don't collect CP/dirección
@@ -1238,7 +1243,8 @@ export default function HomePage() {
             <div className="space-y-5">
               <h2 className="text-xl font-semibold text-gray-900">Reenvío del pedido</h2>
 
-              {/* Resumen de precio */}
+              {/* Resumen de precio - usamos el costo del envío original de la orden,
+                  NO los precios del storefront (que tienen markup de Tiendanube). */}
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
                 <div className="flex justify-between text-sm text-gray-700">
                   <span>Modalidad elegida:</span>
@@ -1247,11 +1253,14 @@ export default function HomePage() {
                 <div className="border-t border-blue-200 pt-2 flex justify-between">
                   <span className="font-semibold text-gray-900">Costo del reenvío</span>
                   <span className="text-2xl font-bold text-gray-900">
-                    {selectedShipping
-                      ? `$${publicPrice(selectedShipping.price).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      : "—"}
+                    {orderInfo?.shippingCostOwner != null
+                      ? `$${publicPrice(orderInfo.shippingCostOwner).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : selectedShipping
+                        ? `$${publicPrice(selectedShipping.price).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                        : "—"}
                   </span>
                 </div>
+                <p className="text-xs text-gray-500">Es el mismo costo del envío original de tu compra.</p>
               </div>
 
               {/* Dirección destino — para domicilio: misma de la orden o custom */}
@@ -1420,12 +1429,8 @@ export default function HomePage() {
                             className="mt-1"
                           />
                           <div className="flex-1">
-                            <div className="flex justify-between gap-2">
-                              <span className="text-sm font-medium text-gray-900">{opt.name}</span>
-                              <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">
-                                ${publicPrice(opt.price).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                            </div>
+                            <span className="text-sm font-medium text-gray-900">{opt.name}</span>
+                            {/* Precios individuales del carrier ocultados — todos los carriers cobran lo mismo (el costo del envío original) */}
                             {opt.branches && opt.branches.length > 0 && (
                               <details className="mt-1.5">
                                 <summary className="text-xs text-blue-600 cursor-pointer">Ver sucursales ({opt.branches.length})</summary>
