@@ -243,6 +243,41 @@ export default function HomePage() {
     (o) => o.code === selectedShippingCode
   );
 
+  // Reenvío: auto-fetch opciones de envío usando el CP de la orden original.
+  // El cliente puede elegir cualquier modalidad disponible (e-pick, Correo, sucursal).
+  useEffect(() => {
+    if (
+      claimType === "reenvio" &&
+      step === 3 &&
+      orderInfo?.shippingAddress?.zipcode &&
+      domicilioOptions.length === 0 &&
+      sucursalOptions.length === 0 &&
+      !calculatingShipping
+    ) {
+      const zip = orderInfo.shippingAddress.zipcode;
+      setShipZipcode(zip);
+      calculateShipping(zip);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [claimType, step, orderInfo]);
+
+  // Reenvío: cuando llegan las opciones, preseleccionar la que matchee el envío original
+  useEffect(() => {
+    if (claimType !== "reenvio") return;
+    if (selectedShippingCode) return;
+    const originalName = (orderInfo?.shippingOptionName || "").toLowerCase();
+    const all = [...domicilioOptions, ...sucursalOptions];
+    if (all.length === 0) return;
+    const match = all.find((o) => originalName && o.name.toLowerCase().includes(originalName.split(" - ")[1]?.toLowerCase() || ""));
+    if (match) setSelectedShippingCode(match.code);
+    else {
+      // fallback: el primer domicilio o el primero disponible
+      const def = domicilioOptions[0] || sucursalOptions[0];
+      if (def) setSelectedShippingCode(def.code);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domicilioOptions, sucursalOptions, claimType]);
+
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) {
@@ -286,8 +321,6 @@ export default function HomePage() {
           customerEmail: orderInfo?.customer?.email || customerEmail,
           customerPhone: orderInfo?.customer?.phone || "",
           ...(claimType === "reenvio" && orderInfo && {
-            // Persistimos todos los campos de la shipping_address original para que
-            // el robot tenga lo que necesita sin requerir edición manual del admin.
             shippingZipcode: orderInfo.shippingAddress?.zipcode || "",
             shippingProvince: orderInfo.shippingAddress?.province || "",
             shippingCity: orderInfo.shippingAddress?.city || "",
@@ -296,14 +329,13 @@ export default function HomePage() {
             shippingFloor: orderInfo.shippingAddress?.floor || "",
             shippingNeighborhood: orderInfo.shippingAddress?.locality || "",
             shippingPhone: orderInfo.shippingAddress?.phone || orderInfo.customer?.phone || "",
-            // El nombre del destinatario en Tiendanube viene en un solo string "Nombre Apellido"
             shippingRecipientName: (orderInfo.shippingAddress?.name || orderInfo.customer?.name || "").split(" ").slice(0, 1).join(" "),
             shippingRecipientLastName: (orderInfo.shippingAddress?.name || orderInfo.customer?.name || "").split(" ").slice(1).join(" "),
-            shippingMode: "domicilio",
-            shippingMethodCode: "reenvio",
-            shippingMethodName: orderInfo.shippingOptionName || orderInfo.shippingCarrier || "Reenvío",
-            // Final amount the customer pays (already includes 6% surcharge)
-            shippingCost: orderInfo.shippingCostOwner != null ? publicPrice(orderInfo.shippingCostOwner) : null,
+            // Carrier elegido por el cliente (con 6% surcharge para MP)
+            shippingMode: deliveryMode === "sucursal" ? "sucursal" : "domicilio",
+            shippingMethodCode: selectedShipping?.code || "reenvio",
+            shippingMethodName: selectedShipping?.name || orderInfo.shippingOptionName || orderInfo.shippingCarrier || "Reenvío",
+            shippingCost: selectedShipping ? publicPrice(selectedShipping.price) : (orderInfo.shippingCostOwner != null ? publicPrice(orderInfo.shippingCostOwner) : null),
           }),
           ...(claimType === "cambio" && {
             // For presencial we don't collect CP/dirección
@@ -1167,38 +1199,115 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Step 3: Reenvío - precio + razón + submit */}
+          {/* Step 3: Reenvío - elegir carrier + motivo + submit */}
           {step === 3 && claimType === "reenvio" && (
             <div className="space-y-5">
               <h2 className="text-xl font-semibold text-gray-900">Reenvío del pedido</h2>
 
+              {/* Resumen de precio */}
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
                 <div className="flex justify-between text-sm text-gray-700">
-                  <span>Envío original:</span>
-                  <span className="font-medium text-gray-900 text-right">{orderInfo?.shippingOptionName || orderInfo?.shippingCarrier || "-"}</span>
+                  <span>Modalidad elegida:</span>
+                  <span className="font-medium text-gray-900 text-right">{selectedShipping?.name || "Elegí una modalidad abajo"}</span>
                 </div>
                 <div className="border-t border-blue-200 pt-2 flex justify-between">
                   <span className="font-semibold text-gray-900">Costo del reenvío</span>
                   <span className="text-2xl font-bold text-gray-900">
-                    {orderInfo?.shippingCostOwner != null
-                      ? `$${publicPrice(orderInfo.shippingCostOwner).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                      : "A coordinar"}
+                    {selectedShipping
+                      ? `$${publicPrice(selectedShipping.price).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                      : "—"}
                   </span>
                 </div>
-                <p className="text-xs text-gray-500">
-                  Es el mismo costo del envío original. Te vamos a contactar para coordinar el pago y el reenvío a la misma dirección de la orden.
-                </p>
               </div>
 
+              {/* Dirección destino (read-only desde la orden) */}
               {orderInfo?.shippingAddress && (
                 <div className="border border-gray-200 rounded-xl p-4 space-y-1 text-sm">
                   <p className="font-semibold text-gray-900">Se reenvía a:</p>
                   <p className="text-gray-700">
-                    {orderInfo.shippingAddress.address}, {orderInfo.shippingAddress.city}, {orderInfo.shippingAddress.province} - CP {orderInfo.shippingAddress.zipcode}
+                    {orderInfo.shippingAddress.address}{orderInfo.shippingAddress.number ? ` ${orderInfo.shippingAddress.number}` : ""}, {orderInfo.shippingAddress.city}, {orderInfo.shippingAddress.province} - CP {orderInfo.shippingAddress.zipcode}
                   </p>
                   <p className="text-xs text-gray-500 mt-1">Si necesitás cambiar la dirección, indicalo abajo en el motivo.</p>
                 </div>
               )}
+
+              {/* Selector de carrier (mismas opciones que cambio) */}
+              <div className="space-y-3 border border-gray-200 rounded-xl p-4">
+                <h3 className="font-semibold text-gray-900">Elegí la modalidad del reenvío</h3>
+                {calculatingShipping && <p className="text-sm text-gray-500">Calculando opciones disponibles...</p>}
+                {shippingError && <p className="text-sm text-red-600">{shippingError}</p>}
+
+                {(domicilioOptions.length > 0 || sucursalOptions.length > 0) && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryMode("domicilio")}
+                        disabled={domicilioOptions.length === 0}
+                        className={`py-2.5 rounded-lg border-2 text-sm font-medium transition ${
+                          deliveryMode === "domicilio"
+                            ? "border-blue-600 bg-blue-50 text-blue-700"
+                            : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        Envío a domicilio
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryMode("sucursal")}
+                        disabled={sucursalOptions.length === 0}
+                        className={`py-2.5 rounded-lg border-2 text-sm font-medium transition ${
+                          deliveryMode === "sucursal"
+                            ? "border-blue-600 bg-blue-50 text-blue-700"
+                            : "border-gray-200 text-gray-600 hover:border-gray-300"
+                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        Retirar en sucursal
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {(deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions).map((opt) => (
+                        <label
+                          key={opt.code}
+                          className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition ${
+                            selectedShippingCode === opt.code
+                              ? "border-blue-600 bg-blue-50"
+                              : "border-gray-200 hover:border-gray-300"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="shipping-option-reenvio"
+                            value={opt.code}
+                            checked={selectedShippingCode === opt.code}
+                            onChange={() => setSelectedShippingCode(opt.code)}
+                            className="mt-1"
+                          />
+                          <div className="flex-1">
+                            <div className="flex justify-between gap-2">
+                              <span className="text-sm font-medium text-gray-900">{opt.name}</span>
+                              <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">
+                                ${publicPrice(opt.price).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                            {opt.branches && opt.branches.length > 0 && (
+                              <details className="mt-1.5">
+                                <summary className="text-xs text-blue-600 cursor-pointer">Ver sucursales ({opt.branches.length})</summary>
+                                <ul className="text-xs text-gray-600 mt-1 space-y-0.5 pl-2">
+                                  {opt.branches.slice(0, 10).map((b, i) => (
+                                    <li key={i} className="capitalize">• {b}</li>
+                                  ))}
+                                </ul>
+                              </details>
+                            )}
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
 
               <div className="border border-gray-200 rounded-xl p-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1219,7 +1328,7 @@ export default function HomePage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || !selectedShipping}
                   className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? "Enviando..." : "Solicitar reenvío"}
