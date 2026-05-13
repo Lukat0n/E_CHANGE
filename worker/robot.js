@@ -11,7 +11,8 @@ const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 /**
  * Lanza Chromium con la config "stealth" que necesitamos para Tiendanube.
- * Devuelve { browser, context, page } — el caller hace browser.close() al final.
+ * Si SESSION_STATE_B64 está seteada (bootstrap manual), carga la sesión guardada
+ * para saltarse el login automatizado (que pelea con el anti-bot).
  */
 async function launchBrowser() {
   const browser = await chromium.launch({
@@ -22,13 +23,28 @@ async function launchBrowser() {
       "--disable-features=IsolateOrigins,site-per-process",
     ],
   });
-  const context = await browser.newContext({
+
+  const contextOptions = {
     userAgent: UA,
     viewport: { width: 1366, height: 768 },
     locale: "es-AR",
     timezoneId: "America/Argentina/Buenos_Aires",
     extraHTTPHeaders: { "Accept-Language": "es-AR,es;q=0.9,en;q=0.8" },
-  });
+  };
+
+  const sessionB64 = process.env.SESSION_STATE_B64;
+  if (sessionB64) {
+    try {
+      const json = Buffer.from(sessionB64, "base64").toString("utf-8");
+      contextOptions.storageState = JSON.parse(json);
+      console.log("[browser] sesión persistente cargada (cookies:",
+        contextOptions.storageState?.cookies?.length || 0, ")");
+    } catch (err) {
+      console.error("[browser] error parseando SESSION_STATE_B64:", err?.message);
+    }
+  }
+
+  const context = await browser.newContext(contextOptions);
   const page = await context.newPage();
   return { browser, context, page };
 }
@@ -43,9 +59,32 @@ async function launchBrowser() {
  *   queda autenticado solo en www.tiendanube.com.
  */
 async function loginToTiendanube(page, targetUrl = "https://gelica.mitiendanube.com/admin") {
+  // Si tenemos sesión persistente (Plan B), saltamos el login automatizado
+  // y solo verificamos que la sesión sigue válida.
+  if (process.env.SESSION_STATE_B64) {
+    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForTimeout(4000); // dar tiempo al SPA a inicializar
+
+    const finalUrl = page.url();
+    if (finalUrl.includes("/login") || finalUrl.includes("/auth/otp")) {
+      throw new Error(
+        "Sesión persistente expirada o inválida. Corré 'node bootstrap.js' localmente y actualizá SESSION_STATE_B64 en Railway."
+      );
+    }
+    if (!finalUrl.includes("mitiendanube.com")) {
+      throw new Error(`Sesión llevó a URL inesperada: ${finalUrl}`);
+    }
+    return finalUrl;
+  }
+
+  // Si NO hay sesión persistente, fallback al login automatizado (puede pelear con anti-bot)
   const user = process.env.TIENDANUBE_USER;
   const pass = process.env.TIENDANUBE_PASS;
-  if (!user || !pass) throw new Error("Faltan TIENDANUBE_USER / TIENDANUBE_PASS");
+  if (!user || !pass) {
+    throw new Error(
+      "No hay sesión persistente (SESSION_STATE_B64) ni credenciales (TIENDANUBE_USER/PASS). Corré bootstrap.js."
+    );
+  }
 
   // Loguear todos los cambios de URL para debug
   page.on("framenavigated", (frame) => {
@@ -54,17 +93,8 @@ async function loginToTiendanube(page, targetUrl = "https://gelica.mitiendanube.
     }
   });
 
-  // Loguear responses relevantes (auth/gelica/mitiendanube) para entender la cadena
-  page.on("response", async (resp) => {
-    const u = resp.url();
-    if (u.includes("/auth/") || u.includes("gelica") || u.includes("mitiendanube") || u.includes("/login")) {
-      console.log(`[response] ${resp.status()} ${resp.request().method()} ${u}`);
-    }
-  });
-
   // Navegamos al destino. Tiendanube nos va a redirigir a la pantalla de login
-  // con el parámetro login_to seteado, lo que asegura que después de loguear
-  // la cadena de redirects nos lleve de vuelta y setee cookies cross-subdomain.
+  // con el parámetro login_to seteado.
   await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
   await page.waitForTimeout(4000);
 
