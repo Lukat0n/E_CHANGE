@@ -1013,14 +1013,23 @@ export async function quoteCarriers(input) {
     // Esperar a que el Paso 2 renderice los radios de carrier
     await page.waitForTimeout(6000);
 
-    // Leer todos los radios con su label y precio
+    // Leer todos los radios con su nombre y precio. El precio NO está en el
+    // mismo span que el nombre del carrier — vive en un sibling. Por eso
+    // subimos por los padres hasta encontrar uno cuyo texto contenga "$"
+    // (señal de que ahí adentro está también el precio).
     const carriers = await formFrame.evaluate(() => {
       const radios = Array.from(document.querySelectorAll('input[name="deliveryOptionId"]'));
       const visible = radios.filter((r) => r.offsetParent || r.getClientRects?.().length);
 
-      // Extrae el bloque de texto del label asociado a un radio subiendo por padres
-      function labelText(r) {
+      function ancestorWithPrice(r) {
         let probe = r.parentElement;
+        for (let i = 0; i < 10 && probe; i++) {
+          const t = (probe.textContent || "").trim();
+          if (t.includes("$") && t.length < 2000) return t;
+          probe = probe.parentElement;
+        }
+        // Fallback: el contenedor "razonable" más cercano (lo que devolvía antes)
+        probe = r.parentElement;
         for (let i = 0; i < 6 && probe; i++) {
           const t = (probe.textContent || "").trim();
           if (t.length > 3 && t.length < 500) return t;
@@ -1033,26 +1042,55 @@ export async function quoteCarriers(input) {
       function extractPrice(text) {
         const m = text.match(/\$\s*([0-9]{1,3}(?:[\.\,][0-9]{3})*(?:[\.\,][0-9]{2})?)/);
         if (!m) return null;
-        // Normaliza "7.434,00" → 7434.00
         const raw = m[1];
-        const cleaned = raw.replace(/\./g, "").replace(",", ".");
+        // Si tiene ambos separadores, el último es el decimal. En AR ',' es decimal.
+        // Si sólo hay '.' o sólo ',', el último que aparece es el decimal salvo que
+        // tenga 3 dígitos después (entonces es separador de miles).
+        let cleaned = raw;
+        if (raw.includes(",")) {
+          cleaned = raw.replace(/\./g, "").replace(",", ".");
+        } else if ((raw.match(/\./g) || []).length === 1 && /\.\d{3}$/.test(raw)) {
+          // "7.434" estilo AR (miles), no decimal
+          cleaned = raw.replace(".", "");
+        }
         const n = parseFloat(cleaned);
         return Number.isFinite(n) ? n : null;
       }
 
-      // Saca el nombre del carrier: tomamos lo que va antes del primer "$" o salto de línea.
+      // El nombre del carrier es lo que va antes del primer "$" o "\n"
       function extractName(text) {
         const cut = text.split(/\$|\n/)[0];
         return cut.trim();
       }
 
       return visible.map((r) => {
-        const txt = labelText(r);
-        return { id: r.id, value: r.value, rawText: txt.slice(0, 300), name: extractName(txt), price: extractPrice(txt) };
+        const txt = ancestorWithPrice(r);
+        return {
+          id: r.id,
+          value: r.value,
+          rawText: txt.slice(0, 400),
+          name: extractName(txt),
+          price: extractPrice(txt),
+        };
       });
     });
 
-    return { ok: true, zipcode: String(destZip), continuarClicked, carriers };
+    // Si todos los precios vinieron null, dumpeamos el HTML de los radios para diagnosticar
+    let stepHtml = null;
+    if (carriers.length > 0 && carriers.every((c) => c.price == null)) {
+      stepHtml = await formFrame.evaluate(() => {
+        const radios = Array.from(document.querySelectorAll('input[name="deliveryOptionId"]'));
+        const first = radios[0];
+        if (!first) return null;
+        // Subir 8 niveles para capturar el contenedor entero de la lista
+        let probe = first.parentElement;
+        for (let i = 0; i < 8 && probe?.parentElement; i++) probe = probe.parentElement;
+        return probe?.outerHTML?.slice(0, 4000) || null;
+      });
+      console.log("[quoteCarriers] sin precios detectados, HTML snippet:", stepHtml);
+    }
+
+    return { ok: true, zipcode: String(destZip), continuarClicked, carriers, stepHtml };
   } catch (err) {
     return { ok: false, error: err?.message || String(err) };
   } finally {
