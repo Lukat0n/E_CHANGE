@@ -331,38 +331,21 @@ export async function createShipment(input) {
     // El SPA tarda en hidratar e ir renderizando inputs
     await page.waitForTimeout(8000);
 
-    // Enumerar inputs visibles para debug
-    const visibleInputs = await page.locator("input:visible").all();
-    const inputsInfo = await Promise.all(
-      visibleInputs.map((loc) =>
-        loc.evaluate((el) => ({
-          placeholder: el.placeholder || null,
-          name: el.name || null,
-          type: el.type || null,
-        })).catch(() => null)
-      )
-    );
-    console.log(`[createShipment] inputs visibles: ${inputsInfo.length}`, JSON.stringify(inputsInfo));
+    // Enumerar TODOS los inputs (light DOM + shadow DOM recursivo + iframes)
+    const inputsInfo = await findAllInputs(page);
+    console.log(`[createShipment] inputs encontrados (light + shadow + iframes): ${inputsInfo.length}`);
+    console.log(JSON.stringify(inputsInfo, null, 2));
 
     const filled = {};
 
     if (mode === "domicilio") {
       filled.codigoPostal = await fillByPlaceholder(page, /c[oó]digo postal/i, String(destZip));
 
-      // Alto/Ancho/Profundidad: 3 inputs con placeholder "30" en ese orden
-      const dim30 = page.locator('input[placeholder="30"]:visible');
-      const dim30Count = await dim30.count();
-      if (dim30Count >= 3) {
-        await dim30.nth(0).fill(String(alto)).catch(() => {});
-        await dim30.nth(1).fill(String(ancho)).catch(() => {});
-        await dim30.nth(2).fill(String(profundidad)).catch(() => {});
-        filled.alto = { found: true, value: alto };
-        filled.ancho = { found: true, value: ancho };
-        filled.profundidad = { found: true, value: profundidad };
-      } else {
-        console.log(`[createShipment] esperaba 3 inputs placeholder="30", encontré ${dim30Count}`);
-        filled.alto = filled.ancho = filled.profundidad = { found: false };
-      }
+      // Alto/Ancho/Profundidad: 3 inputs con placeholder "30" en ese orden — llenamos via evaluate
+      const dimResult = await fillNthByPlaceholderShadow(page, "30", [String(alto), String(ancho), String(profundidad)]);
+      filled.alto = { found: dimResult.filled >= 1, value: alto };
+      filled.ancho = { found: dimResult.filled >= 2, value: ancho };
+      filled.profundidad = { found: dimResult.filled >= 3, value: profundidad };
 
       if (peso) filled.peso = await fillByPlaceholder(page, /^peso$/i, String(peso));
       if (valor) filled.valor = await fillByPlaceholder(page, /^\$$/, String(valor));
@@ -373,14 +356,9 @@ export async function createShipment(input) {
       if (recipient.email) filled.email = await fillByLabelOrPlaceholder(page, /email/i, recipient.email);
       if (recipient.telefono) filled.telefono = await fillByLabelOrPlaceholder(page, /tel[eé]fono/i, recipient.telefono);
 
-      const dim30 = page.locator('input[placeholder="30"]:visible');
-      const dim30Count = await dim30.count();
-      if (dim30Count >= 3) {
-        await dim30.nth(0).fill(String(alto)).catch(() => {});
-        await dim30.nth(1).fill(String(ancho)).catch(() => {});
-        await dim30.nth(2).fill(String(profundidad)).catch(() => {});
-        filled.alto = filled.ancho = filled.profundidad = { found: true };
-      }
+      const dimResult2 = await fillNthByPlaceholderShadow(page, "30", [String(alto), String(ancho), String(profundidad)]);
+      filled.alto = filled.ancho = filled.profundidad = { found: dimResult2.filled >= 3 };
+
       if (peso) filled.peso = await fillByPlaceholder(page, /^peso$/i, String(peso));
       if (valor) filled.valor = await fillByPlaceholder(page, /valor declarado|^\$$/i, String(valor));
     }
@@ -400,25 +378,148 @@ export async function createShipment(input) {
 }
 
 /**
- * Llena un input visible cuyo placeholder matchea con un regex.
+ * Encuentra TODOS los inputs en la página, incluyendo dentro de shadow DOM y
+ * iframes. Cada elemento incluye una "ruta" (path de selectores con shadow
+ * piercing) para poder ubicarlo después.
+ */
+async function findAllInputs(page) {
+  // En el documento principal: walk recursivo
+  const mainInputs = await page.evaluate(() => {
+    const found = [];
+    function walk(root, pathPrefix) {
+      try {
+        const inputs = root.querySelectorAll
+          ? root.querySelectorAll("input, textarea, [contenteditable='true']")
+          : [];
+        for (const el of inputs) {
+          found.push({
+            tag: el.tagName.toLowerCase(),
+            placeholder: el.placeholder || el.getAttribute?.("placeholder") || null,
+            name: el.name || el.getAttribute?.("name") || null,
+            type: el.type || el.getAttribute?.("type") || null,
+            id: el.id || null,
+            ariaLabel: el.getAttribute?.("aria-label") || null,
+            value: el.value || el.textContent || null,
+            visible: !!(el.offsetParent || el.getClientRects?.().length),
+          });
+        }
+        // Buscar shadow roots y bajar
+        const all = root.querySelectorAll ? root.querySelectorAll("*") : [];
+        for (const el of all) {
+          if (el.shadowRoot) {
+            walk(el.shadowRoot, pathPrefix);
+          }
+        }
+      } catch {}
+    }
+    walk(document, "");
+    return found;
+  });
+
+  // Probar también iframes hijos (excluyendo about:blank y validators)
+  const frames = page.frames();
+  for (const frame of frames) {
+    if (frame === page.mainFrame()) continue;
+    if (frame.url() === "about:blank" || frame.url().includes("validator")) continue;
+    try {
+      const frameInputs = await frame.evaluate(() => {
+        const found = [];
+        const inputs = document.querySelectorAll("input, textarea");
+        for (const el of inputs) {
+          found.push({
+            tag: el.tagName.toLowerCase(),
+            placeholder: el.placeholder || null,
+            name: el.name || null,
+            type: el.type || null,
+            visible: !!(el.offsetParent || el.getClientRects?.().length),
+            frame: true,
+          });
+        }
+        return found;
+      });
+      mainInputs.push(...frameInputs);
+    } catch {}
+  }
+
+  return mainInputs;
+}
+
+/**
+ * Llena un input por placeholder, atravesando shadow DOM via page.evaluate.
+ * Devuelve { found, value, ... } igual que antes.
  */
 async function fillByPlaceholder(page, placeholderRegex, value) {
-  // Buscamos entre todos los inputs visibles el que tenga placeholder que matchea
-  const inputs = page.locator("input:visible");
-  const count = await inputs.count();
-  for (let i = 0; i < count; i++) {
-    const el = inputs.nth(i);
-    const ph = await el.getAttribute("placeholder").catch(() => null);
-    if (ph && placeholderRegex.test(ph)) {
-      try {
-        await el.fill(value);
-        return { found: true, value, placeholder: ph };
-      } catch (err) {
-        return { found: false, value, error: err?.message };
+  const regexSource = placeholderRegex.source;
+  const regexFlags = placeholderRegex.flags;
+
+  const result = await page.evaluate(
+    ({ regexSource, regexFlags, value }) => {
+      const re = new RegExp(regexSource, regexFlags);
+      function findIn(root) {
+        const inputs = root.querySelectorAll ? root.querySelectorAll("input, textarea") : [];
+        for (const el of inputs) {
+          const ph = el.placeholder || el.getAttribute?.("placeholder") || "";
+          if (re.test(ph)) return el;
+        }
+        const all = root.querySelectorAll ? root.querySelectorAll("*") : [];
+        for (const el of all) {
+          if (el.shadowRoot) {
+            const found = findIn(el.shadowRoot);
+            if (found) return found;
+          }
+        }
+        return null;
       }
-    }
-  }
-  return { found: false, value };
+      const el = findIn(document);
+      if (!el) return { found: false };
+
+      // Disparar evento React-compatible
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      nativeSetter.call(el, value);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return { found: true, placeholder: el.placeholder || null };
+    },
+    { regexSource, regexFlags, value }
+  );
+
+  return { ...result, value };
+}
+
+/**
+ * Llena la enésima ocurrencia de inputs con un placeholder dado (shadow-DOM aware).
+ * Para campos como Alto/Ancho/Profundidad donde 3 inputs comparten placeholder "30".
+ * values: array de valores a llenar en orden.
+ */
+async function fillNthByPlaceholderShadow(page, placeholderExact, values) {
+  return page.evaluate(
+    ({ placeholderExact, values }) => {
+      const found = [];
+      function collect(root) {
+        const inputs = root.querySelectorAll ? root.querySelectorAll("input") : [];
+        for (const el of inputs) {
+          const ph = el.placeholder || el.getAttribute?.("placeholder") || "";
+          if (ph === placeholderExact) found.push(el);
+        }
+        const all = root.querySelectorAll ? root.querySelectorAll("*") : [];
+        for (const el of all) {
+          if (el.shadowRoot) collect(el.shadowRoot);
+        }
+      }
+      collect(document);
+
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+      let filled = 0;
+      for (let i = 0; i < Math.min(found.length, values.length); i++) {
+        nativeSetter.call(found[i], values[i]);
+        found[i].dispatchEvent(new Event("input", { bubbles: true }));
+        found[i].dispatchEvent(new Event("change", { bubbles: true }));
+        filled++;
+      }
+      return { found: found.length, filled };
+    },
+    { placeholderExact, values }
+  );
 }
 
 /**
