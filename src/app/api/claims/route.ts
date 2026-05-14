@@ -68,115 +68,133 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 });
   }
 
-  // Para reenvíos: el paquete original tiene que estar DEVUELTO al depósito antes
-  // de aceptar el reclamo. Verificamos en dos niveles:
-  //   1. Status de Tiendanube (rápido, pero puede no estar actualizado).
-  //   2. Scraping de la página de tracking del carrier vía el worker (fuente real).
-  // El cliente impaciente que no esperó la entrega queda bloqueado acá.
+  // Para reenvíos: filtramos casos donde claramente no corresponde reenvío.
+  // Reglas (definidas por el merchant):
+  //   - shipping_status in {unpacked, packed}        → NO (todavía no salió)
+  //   - shipping_status == delivered                 → NO (ya lo recibió)
+  //   - shipping_status == shipped:
+  //     • Correo Argentino: esperar shipping_max_days + 4 días (puede estar en sucursal)
+  //     • Cabify / e-pick / otros: esperar shipping_max_days exacto
+  //     • Si todavía no pasó el plazo → bloquear con mensaje contextual
+  //     • Si pasó → permitir (admin aprueba)
+  //   - shipping_status in {returned, in_return, lost} → permitir (admin aprueba)
+  //   - Otros → permitir (admin aprueba por las dudas)
+  //
+  // Además, si la PAQ.AR API de Correo está configurada y es un envío Correo,
+  // usamos su status real (más confiable que Tiendanube): si dice delivered →
+  // bloquear; si dice returned/lost → permitir.
   if (type === "reenvio") {
     try {
       const originalRaw = await getOrderByNumber(store.accessToken, store.storeId, orderNumber);
       if (originalRaw) {
         const original = formatOrderInfo(originalRaw as Record<string, unknown>);
-        const tdNubeStatus = (original.shippingStatus || "").toLowerCase();
+        const tdStatus = (original.shippingStatus || "").toLowerCase();
         const trackingUrl = original.shippingTrackingUrl;
+        const trackingCode = original.shippingTracking;
+        const shippedAtRaw = (originalRaw as Record<string, unknown>).shipped_at as string | null | undefined;
+        const shippingMaxDays = (originalRaw as Record<string, unknown>).shipping_max_days as number | null | undefined;
+        const optName = (original.shippingOptionName || "").toLowerCase();
+        const urlLower = (trackingUrl || "").toLowerCase();
 
-        // Si Tiendanube dice "delivered" → bloquear de una vez (caso claro)
-        if (tdNubeStatus === "delivered") {
+        // Detección de carrier (por nombre o URL de tracking)
+        let carrierType: "correo" | "epick" | "cabify" | "andreani" | "other" = "other";
+        if (optName.includes("correo argentino") || urlLower.includes("correoargentino")) carrierType = "correo";
+        else if (optName.includes("e-pick") || optName.includes("entrega rápida") || urlLower.includes("e-pick")) carrierType = "epick";
+        else if (optName.includes("cabify") || urlLower.includes("cabify")) carrierType = "cabify";
+        else if (optName.includes("andreani") || urlLower.includes("andreani")) carrierType = "andreani";
+
+        // ───── Bloqueos por estado de Tiendanube ─────
+        if (tdStatus === "unpacked" || tdStatus === "packed") {
+          return NextResponse.json(
+            {
+              error: "Tu pedido todavía no fue despachado. Esperá a que salga del depósito antes de pedir reenvío.",
+              shippingStatus: original.shippingStatus,
+              trackingCode,
+              trackingUrl,
+            },
+            { status: 400 }
+          );
+        }
+        if (tdStatus === "delivered") {
           return NextResponse.json(
             {
               error: "Tu pedido figura como ENTREGADO. Si no lo recibiste, contactanos por WhatsApp antes de pedir un reenvío.",
               shippingStatus: original.shippingStatus,
-              trackingCode: original.shippingTracking,
+              trackingCode,
               trackingUrl,
             },
             { status: 400 }
           );
         }
 
-        // Verificar status real del carrier. Prioridad:
-        //   1. MiCorreo API oficial (si las credenciales están configuradas) ← más confiable.
-        //   2. Scraping vía bot (fallback para cuando no tenemos MiCorreo o el carrier no es Correo).
-        let carrierStatus: string | null = null;
-        let carrierText: string | null = null;
-        const trackingCode = original.shippingTracking;
-        const isCorreoCarrier = (trackingUrl || "").includes("correoargentino.com.ar");
-
-        if (isCorreoCarrier && isCorreoApiConfigured() && trackingCode) {
+        // ───── PAQ.AR API de Correo: chequeo prioritario si está configurada ─────
+        let skipTimeGate = false;
+        if (carrierType === "correo" && isCorreoApiConfigured() && trackingCode) {
           try {
             const result = await getCorreoTrackingStatus(trackingCode);
             if (result.ok) {
-              carrierStatus = result.status;
-              carrierText = result.rawCarrierStatus || null;
               console.log(
-                `[claims POST reenvio] PAQ.AR API: status=${carrierStatus} matched="${result.matched || ""}" raw="${result.rawCarrierStatus || ""}" events=${result.events?.length || 0}`
+                `[claims POST reenvio] PAQ.AR API: status=${result.status} matched="${result.matched || ""}" raw="${result.rawCarrierStatus || ""}"`
               );
-            } else {
-              console.warn("[claims POST reenvio] PAQ.AR API failed:", result.error);
+              if (result.status === "delivered") {
+                return NextResponse.json(
+                  {
+                    error: "Tu pedido figura como ENTREGADO en el seguimiento del correo. Si no lo recibiste, contactanos antes de pedir reenvío.",
+                    shippingStatus: original.shippingStatus,
+                    carrierStatus: result.status,
+                    trackingCode,
+                    trackingUrl,
+                  },
+                  { status: 400 }
+                );
+              }
+              if (result.status === "returned" || result.status === "lost") {
+                // El carrier confirma devolución/pérdida → permitir directo (sin time gate)
+                console.log("[claims POST reenvio] Correo API confirma returned/lost, saltando time gate");
+                skipTimeGate = true;
+              }
+              // Si es in_transit/unknown, seguimos al time gate de abajo
             }
           } catch (err) {
             console.error("[claims POST] PAQ.AR API error:", err);
           }
         }
 
-        // Fallback al worker (scraping) si MiCorreo no contestó o no es Correo
-        if (!carrierStatus) {
-          const workerUrl = process.env.WORKER_URL;
-          const workerKey = process.env.WORKER_API_KEY;
-          if (trackingUrl && workerUrl && workerKey) {
-            try {
-              const r = await fetch(`${workerUrl.replace(/\/$/, "")}/api/tracking-status`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "x-api-key": workerKey },
-                body: JSON.stringify({ url: trackingUrl }),
-                signal: AbortSignal.timeout(45000),
-              });
-              const data = (await r.json()) as {
-                status?: string;
-                text?: string;
-                matchedKeyword?: string | null;
-              };
-              carrierStatus = data?.status || null;
-              carrierText = data?.text || null;
-              console.log(
-                `[claims POST reenvio] tracking-status from worker: status=${carrierStatus} matched="${data?.matchedKeyword || ""}" textPreview="${(data?.text || "").slice(0, 200)}"`
+        // ───── Time gate para shipped: el plazo todavía no terminó ─────
+        if (!skipTimeGate && tdStatus === "shipped") {
+          if (shippedAtRaw && shippingMaxDays != null && shippingMaxDays > 0) {
+            const shippedAt = new Date(shippedAtRaw);
+            const buffer = carrierType === "correo" ? 4 : 0;
+            const totalDays = shippingMaxDays + buffer;
+            const limitDate = new Date(shippedAt);
+            limitDate.setDate(limitDate.getDate() + totalDays);
+            const now = new Date();
+            if (now < limitDate) {
+              const limitStr = limitDate.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+              const userMsg = carrierType === "correo"
+                ? `Todavía no terminó tu plazo de entrega. Probablemente esté esperando en la sucursal de correo más cercana. Volvé a pedir reenvío después del ${limitStr}.`
+                : `Tu plazo de entrega estimado vence el ${limitStr}. Esperá a esa fecha antes de pedir un reenvío.`;
+              return NextResponse.json(
+                {
+                  error: userMsg,
+                  shippingStatus: original.shippingStatus,
+                  carrier: carrierType,
+                  limitDate: limitDate.toISOString(),
+                  trackingCode,
+                  trackingUrl,
+                },
+                { status: 400 }
               );
-            } catch (err) {
-              console.error("[claims POST] tracking-status worker error:", err);
             }
-          }
-        }
-
-        // Decidir: solo permitir reenvío si el carrier dice 'returned' o 'lost',
-        // O si Tiendanube tiene 'returned'/'in_return'/'lost' (segundo nivel).
-        const allowedTdNube = ["returned", "in_return", "lost"];
-        const carrierAllows = carrierStatus === "returned" || carrierStatus === "lost";
-        const tdNubeAllows = allowedTdNube.includes(tdNubeStatus);
-
-        if (!carrierAllows && !tdNubeAllows) {
-          // Construir mensaje contextual según lo que vimos
-          let userMsg = "";
-          if (carrierStatus === "delivered") {
-            userMsg = "Tu pedido figura como ENTREGADO en el seguimiento del correo. Si no lo recibiste, contactanos antes de pedir reenvío.";
-          } else if (carrierStatus === "in_transit" || tdNubeStatus === "shipped") {
-            userMsg = "Tu paquete todavía está EN TRÁNSITO. Esperá a que el correo intente entregarlo o devolverlo al depósito antes de pedir reenvío.";
-          } else if (tdNubeStatus === "unpacked" || tdNubeStatus === "packed") {
-            userMsg = "Tu pedido todavía no fue despachado del depósito.";
+            // El plazo pasó → permitir (cae al final del bloque)
+            console.log(`[claims POST reenvio] plazo de entrega vencido (${carrierType}, ${totalDays}d desde ${shippedAtRaw}), permitiendo`);
           } else {
-            userMsg = "Solo podemos procesar el reenvío cuando el paquete fue devuelto al depósito o declarado perdido. Si pensás que ese es tu caso pero no figura, contactanos.";
+            // Sin datos para computar el plazo, permitimos por las dudas
+            console.log("[claims POST reenvio] shipped sin shipped_at/max_days, permitiendo");
           }
-          return NextResponse.json(
-            {
-              error: userMsg,
-              shippingStatus: original.shippingStatus,
-              carrierStatus,
-              carrierText: carrierText?.slice(0, 300) || null,
-              trackingCode: original.shippingTracking,
-              trackingUrl,
-            },
-            { status: 400 }
-          );
         }
+
+        // returned / in_return / lost / unknown → admin aprueba (cae al final)
       }
     } catch (err) {
       console.error("[claims POST] no se pudo verificar status original:", err);
