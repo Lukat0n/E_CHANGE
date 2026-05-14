@@ -4,6 +4,7 @@ import { findStore } from "@/lib/store";
 import { isAuthenticated } from "@/lib/auth";
 import { createPreference } from "@/lib/mercadopago";
 import { getOrderByNumber, formatOrderInfo } from "@/lib/tiendanube";
+import { getCorreoTrackingStatus, isCorreoApiConfigured } from "@/lib/correo-api";
 
 // GET: List claims (admin)
 export async function GET(req: NextRequest) {
@@ -93,32 +94,56 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        // Si tenemos URL de tracking, consultamos al worker para ver el status real
-        // del carrier (Correo Argentino, e-pick, Cabify, etc).
+        // Verificar status real del carrier. Prioridad:
+        //   1. MiCorreo API oficial (si las credenciales están configuradas) ← más confiable.
+        //   2. Scraping vía bot (fallback para cuando no tenemos MiCorreo o el carrier no es Correo).
         let carrierStatus: string | null = null;
         let carrierText: string | null = null;
-        const workerUrl = process.env.WORKER_URL;
-        const workerKey = process.env.WORKER_API_KEY;
-        if (trackingUrl && workerUrl && workerKey) {
+        const trackingCode = original.shippingTracking;
+        const isCorreoCarrier = (trackingUrl || "").includes("correoargentino.com.ar");
+
+        if (isCorreoCarrier && isCorreoApiConfigured() && trackingCode) {
           try {
-            const r = await fetch(`${workerUrl.replace(/\/$/, "")}/api/tracking-status`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "x-api-key": workerKey },
-              body: JSON.stringify({ url: trackingUrl }),
-              signal: AbortSignal.timeout(45000),
-            });
-            const data = (await r.json()) as {
-              status?: string;
-              text?: string;
-              matchedKeyword?: string | null;
-            };
-            carrierStatus = data?.status || null;
-            carrierText = data?.text || null;
-            console.log(
-              `[claims POST reenvio] tracking-status from worker: status=${carrierStatus} matched="${data?.matchedKeyword || ""}" textPreview="${(data?.text || "").slice(0, 200)}"`
-            );
+            const result = await getCorreoTrackingStatus(trackingCode);
+            if (result.ok) {
+              carrierStatus = result.status;
+              carrierText = result.rawCarrierStatus || null;
+              console.log(
+                `[claims POST reenvio] MiCorreo API: status=${carrierStatus} raw="${result.rawCarrierStatus || ""}" events=${result.events?.length || 0}`
+              );
+            } else {
+              console.warn("[claims POST reenvio] MiCorreo API failed:", result.error);
+            }
           } catch (err) {
-            console.error("[claims POST] tracking-status worker error:", err);
+            console.error("[claims POST] MiCorreo API error:", err);
+          }
+        }
+
+        // Fallback al worker (scraping) si MiCorreo no contestó o no es Correo
+        if (!carrierStatus) {
+          const workerUrl = process.env.WORKER_URL;
+          const workerKey = process.env.WORKER_API_KEY;
+          if (trackingUrl && workerUrl && workerKey) {
+            try {
+              const r = await fetch(`${workerUrl.replace(/\/$/, "")}/api/tracking-status`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "x-api-key": workerKey },
+                body: JSON.stringify({ url: trackingUrl }),
+                signal: AbortSignal.timeout(45000),
+              });
+              const data = (await r.json()) as {
+                status?: string;
+                text?: string;
+                matchedKeyword?: string | null;
+              };
+              carrierStatus = data?.status || null;
+              carrierText = data?.text || null;
+              console.log(
+                `[claims POST reenvio] tracking-status from worker: status=${carrierStatus} matched="${data?.matchedKeyword || ""}" textPreview="${(data?.text || "").slice(0, 200)}"`
+              );
+            } catch (err) {
+              console.error("[claims POST] tracking-status worker error:", err);
+            }
           }
         }
 
