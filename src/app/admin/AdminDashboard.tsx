@@ -233,6 +233,33 @@ export default function AdminDashboard({
     }
   }
 
+  // Crea una orden de prueba en Tiendanube vía API. Datos hardcodeados:
+  // Lucas Ramos / lkatoramos@gmail.com / 1126368640 / Entre Ríos.
+  // Después podés ir a e-change con el # de orden + email/teléfono y
+  // probar el flujo de reclamos sin gastar plata real.
+  async function createTestOrder() {
+    setTestingRobot(true);
+    setRobotResult(null);
+    setRobotDebug(null);
+    try {
+      const res = await fetch("/api/admin/create-test-order", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) {
+        setRobotResult(`❌ ${data.error || `HTTP ${res.status}`}`);
+      } else {
+        setRobotResult(
+          `✅ Orden de prueba #${data.orderNumber} creada. Usá email ${data.customer?.email} o tel ${data.customer?.phone} para verificarla en e-change.`
+        );
+        if (data.adminUrl) window.open(data.adminUrl, "_blank", "noopener");
+      }
+      setRobotDebug(data);
+    } catch (err) {
+      setRobotResult(`❌ ${err instanceof Error ? err.message : "Error"}`);
+    } finally {
+      setTestingRobot(false);
+    }
+  }
+
   async function testCreateShipment() {
     setTestingRobot(true);
     setRobotResult(null);
@@ -486,6 +513,14 @@ export default function AdminDashboard({
               className="bg-green-600 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-green-700 transition disabled:opacity-50"
             >
               {testingRobot ? "..." : "Probar dry run envío"}
+            </button>
+            <button
+              onClick={createTestOrder}
+              disabled={testingRobot}
+              className="bg-purple-600 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-purple-700 transition disabled:opacity-50"
+              title="Crea una orden de prueba en Tiendanube con datos de Lucas Ramos para probar el flujo de reclamos"
+            >
+              {testingRobot ? "..." : "🧪 Crear orden de prueba"}
             </button>
           </div>
 
