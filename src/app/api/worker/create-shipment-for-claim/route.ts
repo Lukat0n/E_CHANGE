@@ -257,7 +257,7 @@ export async function POST(req: NextRequest) {
             claimTypeForMessage(claim.type),
             String(claim.orderNumber),
             "confirmado",
-            `Estamos procesando tu reenvío. Te avisamos por acá cuando salga con el código de seguimiento.`,
+            `Estamos procesando tu reenvío. Apenas salga, vas a recibir un mail con el código de seguimiento.`,
           ],
         });
         whatsappSent = result.ok;

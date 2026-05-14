@@ -2,21 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { findStore } from "@/lib/store";
-import { sendTemplate, normalizePhoneAR, claimTypeForMessage } from "@/lib/whatsapp";
 
 // Webhook de Tiendanube. Eventos de interés para reenvíos:
 //   - order/packed   → la orden se empacó (Envío Nube generó la etiqueta).
 //   - order/fulfilled → la orden se despachó.
-//   - order/updated  → cualquier update (lo usamos como "retry" para cuando
-//                      el tracking aparece DESPUÉS de packed/fulfilled).
+//   - order/updated  → cualquier update (capturar tracking que aparece después).
 //
-// Body de Tiendanube: { store_id: 12345, event: "order/packed", id: 1970313304 }
-// Headers: x-linkedstore-hmac-sha256 = HMAC-SHA256(body, client_secret) en base64.
+// Body: { store_id, event, id }. Header HMAC: x-linkedstore-hmac-sha256.
 //
-// Cuando llega un evento de despacho, buscamos el claim con reorderOrderId = id,
-// fetcheamos la orden para sacar el tracking, y mandamos WhatsApp.
-// Idempotente: si ya mandamos el WhatsApp con tracking (shipmentTrackingCode
-// existe en el claim), saltamos.
+// Comportamiento: cuando llega un evento, buscamos el claim con reorderOrderId,
+// fetcheamos la orden y guardamos el tracking en el claim si lo encontramos.
+// NO mandamos WhatsApp con tracking — Tiendanube ya manda mail nativo al
+// cliente cuando se cambia el estado del envío. El WhatsApp #1 al aprobar
+// el reenvío ya le avisa al cliente que el mail va a llegar.
 export async function POST(req: NextRequest) {
   const raw = await req.text();
 
@@ -95,6 +93,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, skipped: "no tracking yet" });
     }
 
+    // Guardamos el tracking en el claim para tener registro. NO mandamos
+    // WhatsApp: el cliente ya recibió WhatsApp #1 anunciándole que le va
+    // a llegar el mail nativo de Tiendanube cuando se despache.
     await prisma.claim.update({
       where: { id: claim.id },
       data: {
@@ -103,36 +104,8 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Mandar WhatsApp al cliente con el tracking
-    const phone = normalizePhoneAR(claim.shippingPhone || claim.customerPhone);
-    if (!phone) return NextResponse.json({ ok: true, skipped: "no phone" });
-
-    const trackingMsg = trackingUrl
-      ? `Tu reenvío salió. Código: ${trackingCode || "(ver link)"}. Seguilo acá: ${trackingUrl}`
-      : `Tu reenvío salió. Código de seguimiento: ${trackingCode}.`;
-
-    const waResult = await sendTemplate({
-      to: phone,
-      params: [
-        claim.customerName || "cliente",
-        claimTypeForMessage(claim.type),
-        String(claim.orderNumber),
-        "enviada",
-        trackingMsg,
-      ],
-    });
-
-    await prisma.claim.update({
-      where: { id: claim.id },
-      data: {
-        whatsappStatus: waResult.ok ? "sent" : "failed",
-        whatsappError: waResult.ok ? null : waResult.error || "Error desconocido",
-        whatsappSentAt: waResult.ok ? new Date() : null,
-      },
-    });
-
-    console.log(`[tiendanube webhook] WhatsApp con tracking: ${waResult.ok ? "OK" : "FAILED"} ${waResult.error || ""}`);
-    return NextResponse.json({ ok: true, sent: waResult.ok });
+    console.log(`[tiendanube webhook] tracking guardado en claim ${claim.id}: ${trackingCode} ${trackingUrl || ""}`);
+    return NextResponse.json({ ok: true, trackingSaved: true });
   } catch (err) {
     console.error("[tiendanube webhook] error:", err);
     return NextResponse.json({ ok: true, error: err instanceof Error ? err.message : String(err) });
