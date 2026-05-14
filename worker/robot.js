@@ -996,6 +996,62 @@ async function selectByVisibleText(frame, optionText) {
  * Output:
  *   { ok: true, zipcode: "2000", carriers: [{ key: "correo argentino clásico a domicilio", name: "Envío Nube - Correo Argentino Clásico a domicilio - Llega entre el viernes 15/05 y el jueves 21/05", price: 7434 }, ...] }
  */
+/**
+ * Scrape de la página pública de tracking del carrier. Soporta:
+ *   - Correo Argentino (correoargentino.com.ar/formularios/e-commerce?id=...)
+ *   - e-pick (e-pick.com.ar/tracking?id=...)
+ *   - Otros (genérico: toma el texto visible y busca keywords)
+ *
+ * No requiere login. Usa Playwright para que se ejecute el JS de la página
+ * (las páginas modernas cargan el status via AJAX, no en el HTML inicial).
+ *
+ * Devuelve:
+ *   { status: 'delivered' | 'returned' | 'in_transit' | 'lost' | 'unknown',
+ *     text: '<texto extraído>', url, hostname }
+ */
+export async function checkTrackingStatus(input) {
+  const { url } = input || {};
+  if (!url) throw new Error("Falta url");
+
+  const hostname = new URL(url).hostname.replace(/^www\./, "");
+  const { browser, page } = await launchBrowser();
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+    // Esperar que termine de cargar el JS (las APIs AJAX devuelven el status)
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(3000); // colchón por si todavía pintan datos
+
+    // Extraer texto visible del body
+    const text = await page.evaluate(() => (document.body?.innerText || "").replace(/\s+/g, " ").trim());
+
+    // Keywords (en orden de prioridad: el primero que matchea gana)
+    const lower = text.toLowerCase();
+
+    // Devuelta / en devolución (prioridad alta porque a veces aparece junto con otros)
+    const returnedRegex = /\b(devuelt[oa]\s+al?\s*(remitente|origen)|en\s+devoluci[oó]n|retornad[oa]|reintegrad[oa]\s+a|return(ed)?\s+to\s+sender|to\s+be\s+returned|rechazad[oa]\s+por\s+el\s+destinatario)/i;
+    const lostRegex = /\b(extraviad[oa]|perdid[oa]|no\s+encontrad[oa]|lost)/i;
+    const deliveredRegex = /\b(entregad[oa]\s+(?!al\s+correo)|delivered|recibid[oa]\s+por\s+el\s+destinatario)/i;
+    const transitRegex = /\b(en\s+tr[áa]nsito|admitid[oa]|en\s+distribuci[oó]n|despachad[oa]|preparando|in\s+transit)/i;
+
+    let status = "unknown";
+    if (returnedRegex.test(lower)) status = "returned";
+    else if (lostRegex.test(lower)) status = "lost";
+    else if (deliveredRegex.test(lower)) status = "delivered";
+    else if (transitRegex.test(lower)) status = "in_transit";
+
+    return {
+      status,
+      text: text.slice(0, 2000),
+      url,
+      hostname,
+    };
+  } catch (err) {
+    return { status: "unknown", error: err?.message || String(err), url, hostname };
+  } finally {
+    await browser.close();
+  }
+}
+
 export async function quoteCarriers(input) {
   const { destZip, alto = 10, ancho = 15, profundidad = 10, peso = 500 } = input || {};
   if (!destZip) throw new Error("Falta destZip");

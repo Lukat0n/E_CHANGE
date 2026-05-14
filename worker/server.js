@@ -1,5 +1,5 @@
 import express from "express";
-import { testLogin, createShipment, inspectUrl, quoteCarriers } from "./robot.js";
+import { testLogin, createShipment, inspectUrl, quoteCarriers, checkTrackingStatus } from "./robot.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -43,6 +43,19 @@ app.post("/api/inspect-url", requireApiKey, async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error("[/api/inspect-url] failed:", err);
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// Scrape la página de tracking del carrier (Correo/e-pick/etc.) y devuelve
+// un status parseado: returned | delivered | in_transit | lost | unknown.
+// Body: { url: "https://www.correoargentino.com.ar/...." }
+app.post("/api/tracking-status", requireApiKey, async (req, res) => {
+  try {
+    const result = await checkTrackingStatus(req.body || {});
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("[/api/tracking-status] failed:", err);
     res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
 });

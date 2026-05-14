@@ -67,44 +67,88 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 });
   }
 
-  // Para reenvíos: el paquete original tiene que figurar como DEVUELTO o PERDIDO
-  // antes de aceptar el pedido. Esto evita que un cliente impaciente pida reenvío
-  // cuando su paquete todavía está en tránsito (terminaría recibiendo 2 envíos).
-  // El admin igual puede crear órdenes manuales desde el dashboard si hay un caso
-  // especial verificado.
+  // Para reenvíos: el paquete original tiene que estar DEVUELTO al depósito antes
+  // de aceptar el reclamo. Verificamos en dos niveles:
+  //   1. Status de Tiendanube (rápido, pero puede no estar actualizado).
+  //   2. Scraping de la página de tracking del carrier vía el worker (fuente real).
+  // El cliente impaciente que no esperó la entrega queda bloqueado acá.
   if (type === "reenvio") {
     try {
       const originalRaw = await getOrderByNumber(store.accessToken, store.storeId, orderNumber);
       if (originalRaw) {
         const original = formatOrderInfo(originalRaw as Record<string, unknown>);
-        const status = (original.shippingStatus || "").toLowerCase();
-        const allowedForReenvio = ["returned", "in_return", "lost"];
-        if (!allowedForReenvio.includes(status)) {
+        const tdNubeStatus = (original.shippingStatus || "").toLowerCase();
+        const trackingUrl = original.shippingTrackingUrl;
+
+        // Si Tiendanube dice "delivered" → bloquear de una vez (caso claro)
+        if (tdNubeStatus === "delivered") {
+          return NextResponse.json(
+            {
+              error: "Tu pedido figura como ENTREGADO. Si no lo recibiste, contactanos por WhatsApp antes de pedir un reenvío.",
+              shippingStatus: original.shippingStatus,
+              trackingCode: original.shippingTracking,
+              trackingUrl,
+            },
+            { status: 400 }
+          );
+        }
+
+        // Si tenemos URL de tracking, consultamos al worker para ver el status real
+        // del carrier (Correo Argentino, e-pick, Cabify, etc).
+        let carrierStatus: string | null = null;
+        let carrierText: string | null = null;
+        const workerUrl = process.env.WORKER_URL;
+        const workerKey = process.env.WORKER_API_KEY;
+        if (trackingUrl && workerUrl && workerKey) {
+          try {
+            const r = await fetch(`${workerUrl.replace(/\/$/, "")}/api/tracking-status`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-api-key": workerKey },
+              body: JSON.stringify({ url: trackingUrl }),
+              signal: AbortSignal.timeout(45000),
+            });
+            const data = (await r.json()) as { status?: string; text?: string };
+            carrierStatus = data?.status || null;
+            carrierText = data?.text || null;
+          } catch (err) {
+            console.error("[claims POST] tracking-status worker error:", err);
+          }
+        }
+
+        // Decidir: solo permitir reenvío si el carrier dice 'returned' o 'lost',
+        // O si Tiendanube tiene 'returned'/'in_return'/'lost' (segundo nivel).
+        const allowedTdNube = ["returned", "in_return", "lost"];
+        const carrierAllows = carrierStatus === "returned" || carrierStatus === "lost";
+        const tdNubeAllows = allowedTdNube.includes(tdNubeStatus);
+
+        if (!carrierAllows && !tdNubeAllows) {
+          // Construir mensaje contextual según lo que vimos
           let userMsg = "";
-          if (status === "delivered") {
-            userMsg = "Tu pedido figura como ENTREGADO. Si no lo recibiste, contactá directamente a la tienda.";
-          } else if (status === "shipped" || status === "in_transit") {
-            userMsg = "Tu pedido todavía está en tránsito. Tenés que esperar a que el correo intente entregarlo. Solo podés pedir reenvío si el paquete vuelve al depósito.";
-          } else if (status === "unpacked" || status === "packed") {
-            userMsg = "Tu pedido todavía no fue despachado. Esperá a que salga del depósito.";
+          if (carrierStatus === "delivered") {
+            userMsg = "Tu pedido figura como ENTREGADO en el seguimiento del correo. Si no lo recibiste, contactanos antes de pedir reenvío.";
+          } else if (carrierStatus === "in_transit" || tdNubeStatus === "shipped") {
+            userMsg = "Tu paquete todavía está EN TRÁNSITO. Esperá a que el correo intente entregarlo o devolverlo al depósito antes de pedir reenvío.";
+          } else if (tdNubeStatus === "unpacked" || tdNubeStatus === "packed") {
+            userMsg = "Tu pedido todavía no fue despachado del depósito.";
           } else {
-            userMsg = `Solo podés pedir reenvío si el paquete fue devuelto al depósito o declarado perdido. Estado actual: ${original.shippingStatus || "desconocido"}.`;
+            userMsg = "Solo podemos procesar el reenvío cuando el paquete fue devuelto al depósito o declarado perdido. Si pensás que ese es tu caso pero no figura, contactanos.";
           }
           return NextResponse.json(
             {
               error: userMsg,
               shippingStatus: original.shippingStatus,
+              carrierStatus,
+              carrierText: carrierText?.slice(0, 300) || null,
               trackingCode: original.shippingTracking,
-              trackingUrl: original.shippingTrackingUrl,
+              trackingUrl,
             },
             { status: 400 }
           );
         }
       }
     } catch (err) {
-      // Si falla la consulta a Tiendanube, NO bloqueamos al cliente — log y seguimos.
-      // El admin igual chequea de nuevo antes de crear la orden de reenvío.
       console.error("[claims POST] no se pudo verificar status original:", err);
+      // Falla silenciosa: dejamos pasar (admin chequea antes de crear la orden)
     }
   }
 
