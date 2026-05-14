@@ -38,19 +38,20 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: "No hay órdenes para usar como template" }, { status: 404 });
   }
 
-  // 2. Extraer products (variant_id + quantity) y shipping_address del template
+  // 2. Productos: copiamos variant_id + quantity del template, con price 0
+  //    para que la orden tenga total $0 (es una orden de prueba).
   const templateProducts = (template.products as Array<{ variant_id?: number; quantity?: number }> | undefined) || [];
   const products = templateProducts
     .filter((p) => p.variant_id != null)
-    .map((p) => ({ variant_id: p.variant_id as number, quantity: p.quantity || 1 }));
+    .map((p) => ({ variant_id: p.variant_id as number, quantity: p.quantity || 1, price: "0.00" }));
   if (products.length === 0) {
     return NextResponse.json({ ok: false, error: "La orden template no tiene productos válidos" }, { status: 502 });
   }
 
   const templateShipping = template.shipping_address as Record<string, unknown> | null;
 
-  // 3. Construir shipping address tomando la del template + sobrescribiendo
-  //    contacto con los datos de prueba.
+  // 3. Dirección de envío: si la orden template tiene una, la usamos. Si no,
+  //    fallback al destino de prueba (Entre Ríos, Libertador San Martín).
   const shippingAddress = {
     first_name: "Lucas",
     last_name: "Ramos",
@@ -65,7 +66,10 @@ export async function POST() {
     phone: "+541126368640",
   };
 
-  // 4. Crear la nueva orden con los datos copiados + contacto test
+  // 4. Crear la orden con envío Correo Argentino Clásico hardcodeado.
+  //    Total queda en $0 (productos a price 0, shipping_cost_customer 0).
+  //    shipping_cost_owner se setea para que el flujo de cambio compute
+  //    un precio realista (4500 + owner cost) cuando se haga el test.
   const result = await createOrder(store.accessToken, store.storeId, {
     payment_status: "paid",
     products,
@@ -76,7 +80,13 @@ export async function POST() {
     },
     shipping_address: shippingAddress,
     billing_address: shippingAddress,
+    shipping: "api_3603194",
+    shipping_option: "Envío Nube - Correo Argentino Clásico a domicilio",
+    shipping_option_code: "ne-correo-arg-clasico-domicilio",
+    shipping_carrier_name: "Envío Nube",
+    shipping_pickup_type: "ship",
     shipping_cost_customer: 0,
+    shipping_cost_owner: 7434,
     note: "[TEST] Orden creada desde el admin para pruebas de flujo de reclamos.",
   });
 
