@@ -161,40 +161,55 @@ export async function POST(req: NextRequest) {
         }
 
         // ───── Time gate: aplicamos para CUALQUIER status que no sea bloqueo inmediato ─────
-        // Hasta que tengamos PAQ.AR API, no confiamos en statuses tipo "returned"
-        // de Tiendanube (raramente los reporta bien). El único criterio confiable es:
-        // ¿pasó el plazo desde que se despachó? Si sí → admin aprueba. Si no → bloquear.
+        // Sin PAQ.AR API, no confiamos en statuses tipo "returned" de Tiendanube. El
+        // único criterio para permitir es: ¿pasó el plazo desde que se despachó?
+        //
+        // Para Correo Argentino tenemos DOS plazos:
+        //   normal   = shipped_at + max_days   (durante este tiempo: "todavía dentro del plazo")
+        //   extendido = normal + 4 días        (durante esta ventana: "probablemente esté en sucursal")
+        // Recién pasado el extendido permitimos pedir reenvío (lo que después aprueba el admin).
+        //
+        // Para Cabify / e-pick / otros no hay buffer: solo el plazo normal.
         if (!skipTimeGate) {
           if (shippedAtRaw && shippingMaxDays != null && shippingMaxDays > 0) {
             const shippedAt = new Date(shippedAtRaw);
+            const normalLimit = new Date(shippedAt);
+            normalLimit.setDate(normalLimit.getDate() + shippingMaxDays);
             const buffer = carrierType === "correo" ? 4 : 0;
-            const totalDays = shippingMaxDays + buffer;
-            const limitDate = new Date(shippedAt);
-            limitDate.setDate(limitDate.getDate() + totalDays);
+            const extendedLimit = new Date(shippedAt);
+            extendedLimit.setDate(extendedLimit.getDate() + shippingMaxDays + buffer);
             const now = new Date();
-            if (now < limitDate) {
-              const limitStr = limitDate.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
-              const userMsg = carrierType === "correo"
-                ? `Todavía no terminó tu plazo de entrega. Probablemente esté esperando en la sucursal de correo más cercana. Volvé a pedir reenvío después del ${limitStr}.`
-                : `Tu plazo de entrega estimado vence el ${limitStr}. Esperá a esa fecha antes de pedir un reenvío.`;
+            const fmt = (d: Date) =>
+              d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+            if (now < extendedLimit) {
+              let userMsg: string;
+              if (now < normalLimit) {
+                // Dentro del plazo normal de entrega
+                userMsg = `Tu pedido todavía está dentro del plazo de entrega (hasta el ${fmt(normalLimit)}). Esperá a esa fecha antes de pedir un reenvío.`;
+              } else {
+                // Pasó el plazo normal pero estamos en los +4 días extra de Correo
+                userMsg = `Tu plazo de entrega ya terminó, pero probablemente el paquete esté esperando en la sucursal de correo más cercana. Volvé a pedir reenvío después del ${fmt(extendedLimit)}.`;
+              }
               return NextResponse.json(
                 {
                   error: userMsg,
                   shippingStatus: original.shippingStatus,
                   carrier: carrierType,
-                  limitDate: limitDate.toISOString(),
+                  normalLimit: normalLimit.toISOString(),
+                  extendedLimit: extendedLimit.toISOString(),
                   trackingCode,
                   trackingUrl,
                 },
                 { status: 400 }
               );
             }
-            // El plazo pasó → permitir (cae al final del bloque, admin aprueba)
-            console.log(`[claims POST reenvio] plazo de entrega vencido (${carrierType}, ${totalDays}d desde ${shippedAtRaw}), permitiendo`);
+            // Pasó el plazo extendido → permitir (admin aprueba)
+            console.log(
+              `[claims POST reenvio] plazo vencido (${carrierType}, normal ${shippingMaxDays}d + buffer ${buffer}d desde ${shippedAtRaw}), permitiendo`
+            );
           } else {
-            // Sin shipped_at/max_days no podemos computar. Esto pasa en órdenes
-            // viejas o cuando Envío Nube no reportó la fecha. Dejamos pasar al
-            // admin para que decida.
+            // Sin shipped_at/max_days no podemos computar. Dejamos pasar al admin.
             console.log("[claims POST reenvio] sin shipped_at/max_days, permitiendo (admin aprueba)");
           }
         }
