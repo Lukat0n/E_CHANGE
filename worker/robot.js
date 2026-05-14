@@ -1017,12 +1017,25 @@ export async function checkTrackingStatus(input) {
   const { browser, page } = await launchBrowser();
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    // Esperar que termine de cargar el JS (las APIs AJAX devuelven el status)
-    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(3000); // colchón por si todavía pintan datos
+    // El Drupal de Correo Argentino tarda en pintar la tabla de eventos (JS hace
+    // varios fetchs anidados). Esperamos networkidle + un colchón largo, y además
+    // pollinog hasta encontrar el header "Resultados de la consulta" (que aparece
+    // cuando la tabla renderizó).
+    await page.waitForLoadState("networkidle", { timeout: 20000 }).catch(() => {});
+
+    // Polling activo: hasta 25s buscando texto que indique que renderizó la tabla
+    const markers = ["resultados de la consulta", "no se encontr", "movimientos", "estado del envío", "tracking", "histor"];
+    const start = Date.now();
+    while (Date.now() - start < 25000) {
+      const sample = await page.evaluate(() => (document.body?.innerText || "").toLowerCase().slice(0, 5000)).catch(() => "");
+      if (markers.some((m) => sample.includes(m))) break;
+      await page.waitForTimeout(1500);
+    }
+    await page.waitForTimeout(2000); // un colchón final
 
     // Extraer texto visible del body
     const text = await page.evaluate(() => (document.body?.innerText || "").replace(/\s+/g, " ").trim());
+    console.log(`[checkTrackingStatus] ${hostname} body text (${text.length} chars): ${text.slice(0, 1500)}`);
 
     // Keywords (en orden de prioridad: returned/lost > delivered > in_transit).
     // El truco de Correo Argentino es que el evento final puede decir "ENTREGADO"
