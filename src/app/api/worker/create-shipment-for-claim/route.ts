@@ -66,14 +66,16 @@ export async function POST(req: NextRequest) {
   }
   const original = formatOrderInfo(originalRaw as Record<string, unknown>);
 
-  // Productos: usamos los variant_id + quantity del original. No seteamos price,
-  // así Tiendanube usa el precio default del variant (la orden refleja valores
-  // reales pero NO suma a estadísticas porque es API-created).
+  // Productos: variant_id + quantity del original, con price=0 para que la orden
+  // tenga subtotal $0 (es reenvío, el cliente NO está pagando el producto otra
+  // vez — solo el envío, y ese ya lo cobramos por MP aparte). Así no contamina
+  // facturación / accounting + es trivialmente identificable como reenvío.
   const products = original.products
     .filter((p) => p.variantId != null)
     .map((p) => ({
       variant_id: p.variantId as number,
       quantity: p.quantity || 1,
+      price: "0.00",
     }));
 
   if (products.length === 0) {
