@@ -107,9 +107,16 @@ export async function POST(req: NextRequest) {
               body: JSON.stringify({ url: trackingUrl }),
               signal: AbortSignal.timeout(45000),
             });
-            const data = (await r.json()) as { status?: string; text?: string };
+            const data = (await r.json()) as {
+              status?: string;
+              text?: string;
+              matchedKeyword?: string | null;
+            };
             carrierStatus = data?.status || null;
             carrierText = data?.text || null;
+            console.log(
+              `[claims POST reenvio] tracking-status from worker: status=${carrierStatus} matched="${data?.matchedKeyword || ""}" textPreview="${(data?.text || "").slice(0, 200)}"`
+            );
           } catch (err) {
             console.error("[claims POST] tracking-status worker error:", err);
           }

@@ -1024,23 +1024,39 @@ export async function checkTrackingStatus(input) {
     // Extraer texto visible del body
     const text = await page.evaluate(() => (document.body?.innerText || "").replace(/\s+/g, " ").trim());
 
-    // Keywords (en orden de prioridad: el primero que matchea gana)
+    // Keywords (en orden de prioridad: returned/lost > delivered > in_transit).
+    // El truco de Correo Argentino es que el evento final puede decir "ENTREGADO"
+    // pero refiriéndose a la entrega DEL paquete al CDD del merchant (la vuelta),
+    // no al destinatario. Por eso priorizamos "RETORNANDO" / "DIRECCIÓN INSUFICIENTE"
+    // / "PIEZA EN REZAGO" sobre "entregado" — si aparece cualquiera de esos en el
+    // historial, el paquete está volviendo o ya volvió.
     const lower = text.toLowerCase();
 
-    // Devuelta / en devolución (prioridad alta porque a veces aparece junto con otros)
-    const returnedRegex = /\b(devuelt[oa]\s+al?\s*(remitente|origen)|en\s+devoluci[oó]n|retornad[oa]|reintegrad[oa]\s+a|return(ed)?\s+to\s+sender|to\s+be\s+returned|rechazad[oa]\s+por\s+el\s+destinatario)/i;
-    const lostRegex = /\b(extraviad[oa]|perdid[oa]|no\s+encontrad[oa]|lost)/i;
-    const deliveredRegex = /\b(entregad[oa]\s+(?!al\s+correo)|delivered|recibid[oa]\s+por\s+el\s+destinatario)/i;
-    const transitRegex = /\b(en\s+tr[áa]nsito|admitid[oa]|en\s+distribuci[oó]n|despachad[oa]|preparando|in\s+transit)/i;
+    const returnedRegex = /(devuelt[oa]\s+al?\s*(remitente|origen)|en\s+devoluci[oó]n|retornand[oa]|retornad[oa]|reintegrad[oa]\s+a|return(ed|ing)?\s+to\s+sender|to\s+be\s+returned|rechazad[oa]\s+por\s+el\s+destinatario|direcci[oó]n\s+insuficiente|pieza\s+en\s+rezago|domicilio\s+cerrado\s+\(definitivo\))/i;
+    const lostRegex = /\b(extraviad[oa]|perdid[oa]|no\s+encontrad[oa]|lost)\b/i;
+    const deliveredRegex = /\b(entregad[oa]\s+al\s+destinatario|delivered|recibid[oa]\s+por\s+el\s+destinatario)/i;
+    const transitRegex = /\b(en\s+tr[áa]nsito|admitid[oa]|en\s+distribuci[oó]n|despachad[oa]|preparando|en\s+poder\s+del\s+distribuidor|in\s+transit)/i;
 
     let status = "unknown";
-    if (returnedRegex.test(lower)) status = "returned";
-    else if (lostRegex.test(lower)) status = "lost";
-    else if (deliveredRegex.test(lower)) status = "delivered";
-    else if (transitRegex.test(lower)) status = "in_transit";
+    let matchedKeyword = null;
+    if (returnedRegex.test(lower)) {
+      status = "returned";
+      matchedKeyword = lower.match(returnedRegex)?.[0] || null;
+    } else if (lostRegex.test(lower)) {
+      status = "lost";
+      matchedKeyword = lower.match(lostRegex)?.[0] || null;
+    } else if (deliveredRegex.test(lower)) {
+      status = "delivered";
+      matchedKeyword = lower.match(deliveredRegex)?.[0] || null;
+    } else if (transitRegex.test(lower)) {
+      status = "in_transit";
+      matchedKeyword = lower.match(transitRegex)?.[0] || null;
+    }
+    console.log(`[checkTrackingStatus] ${hostname} → ${status} (matched: "${matchedKeyword}")`);
 
     return {
       status,
+      matchedKeyword,
       text: text.slice(0, 2000),
       url,
       hostname,
