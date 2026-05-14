@@ -4,11 +4,10 @@ import { findStore } from "@/lib/store";
 import { createOrder, buildOrderAdminUrl, getStoreInfo } from "@/lib/tiendanube";
 
 // POST /api/admin/create-test-order
-// Crea una orden de prueba en Tiendanube vía API con datos hardcodeados
-// (Lucas Ramos, Entre Ríos). Útil para probar el flujo de reclamos sin
-// tener que hacer una compra real.
-//
-// Variant hardcodeado: 132236502 (Rodillera Frío-Calor M de Gélica).
+// Crea una orden de prueba en Tiendanube vía API copiando la última orden
+// real (productos + dirección) pero cambiando email y teléfono a:
+//   lkatoramos@gmail.com / +541126368640
+// Así evitamos problemas de variant_id inexistente o address con formato raro.
 export async function POST() {
   if (!(await isAuthenticated())) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -17,23 +16,59 @@ export async function POST() {
   const store = await findStore("default");
   if (!store) return NextResponse.json({ error: "Store no encontrada" }, { status: 404 });
 
+  // 1. Fetchear la última orden REAL como template
+  const lastRes = await fetch(
+    `https://api.tiendanube.com/v1/${store.storeId}/orders?per_page=1&page=1`,
+    {
+      headers: {
+        Authentication: `bearer ${store.accessToken}`,
+        "User-Agent": "E-Change App (echange@app.com)",
+      },
+    }
+  );
+  if (!lastRes.ok) {
+    return NextResponse.json(
+      { ok: false, error: `No se pudo fetchear la última orden: HTTP ${lastRes.status}` },
+      { status: 502 }
+    );
+  }
+  const orders = (await lastRes.json()) as Array<Record<string, unknown>>;
+  const template = orders[0];
+  if (!template) {
+    return NextResponse.json({ ok: false, error: "No hay órdenes para usar como template" }, { status: 404 });
+  }
+
+  // 2. Extraer products (variant_id + quantity) y shipping_address del template
+  const templateProducts = (template.products as Array<{ variant_id?: number; quantity?: number }> | undefined) || [];
+  const products = templateProducts
+    .filter((p) => p.variant_id != null)
+    .map((p) => ({ variant_id: p.variant_id as number, quantity: p.quantity || 1 }));
+  if (products.length === 0) {
+    return NextResponse.json({ ok: false, error: "La orden template no tiene productos válidos" }, { status: 502 });
+  }
+
+  const templateShipping = template.shipping_address as Record<string, unknown> | null;
+
+  // 3. Construir shipping address tomando la del template + sobrescribiendo
+  //    contacto con los datos de prueba.
   const shippingAddress = {
     first_name: "Lucas",
     last_name: "Ramos",
-    address: "9 de julio",
-    number: "80",
-    floor: null,
-    locality: null,
-    city: "Libertador San Martín",
-    province: "Entre Ríos",
-    zipcode: "3103",
+    address: (templateShipping?.address as string) || "9 de julio",
+    number: (templateShipping?.number as string) || "80",
+    floor: (templateShipping?.floor as string) || null,
+    locality: (templateShipping?.locality as string) || null,
+    city: (templateShipping?.city as string) || "Libertador San Martín",
+    province: (templateShipping?.province as string) || "Entre Ríos",
+    zipcode: (templateShipping?.zipcode as string) || "3103",
     country: "AR",
     phone: "+541126368640",
   };
 
+  // 4. Crear la nueva orden con los datos copiados + contacto test
   const result = await createOrder(store.accessToken, store.storeId, {
     payment_status: "paid",
-    products: [{ variant_id: 132236502, quantity: 1 }],
+    products,
     customer: {
       email: "lkatoramos@gmail.com",
       name: "Lucas Ramos",
@@ -46,10 +81,11 @@ export async function POST() {
   });
 
   if (!result.ok) {
+    console.error("[create-test-order] createOrder failed:", result.error);
     return NextResponse.json({ ok: false, error: result.error }, { status: result.status || 502 });
   }
 
-  // Resolver admin URL
+  // Resolver admin URL para abrir la orden en otra pestaña
   let storeDomain: string | null = null;
   try {
     const info = await getStoreInfo(store.accessToken, store.storeId);
@@ -66,6 +102,7 @@ export async function POST() {
     orderId,
     orderNumber,
     adminUrl,
+    templateOrderNumber: template.number,
     customer: {
       email: "lkatoramos@gmail.com",
       phone: "1126368640",
