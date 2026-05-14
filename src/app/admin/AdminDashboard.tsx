@@ -1001,7 +1001,7 @@ export default function AdminDashboard({
                           disabled={updating}
                           className="w-full bg-purple-600 text-white py-2.5 rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50"
                         >
-                          ➕ Crear pedido de reenvío en Tiendanube
+                          ✅ Aprobar y procesar reenvío
                         </button>
                       )}
                     </>
