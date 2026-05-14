@@ -53,16 +53,21 @@ interface ShippingOption {
   branches?: string[];
 }
 
-// Costo base del cambio (cubre envíos del producto original al depósito y del nuevo al cliente).
-// Varía según el modo de entrega elegido. Al cliente se le muestra base * 1.06 (absorbe la comisión MP).
-const CAMBIO_PRECIO_DOMICILIO = 14989;
-const CAMBIO_PRECIO_SUCURSAL = 9977;
-const CAMBIO_PRECIO_PRESENCIAL = 0;
+// Costo base del cambio. Política simplificada:
+//   - Domicilio:  $4.500 + shipping_cost_owner de la orden original
+//                 (lo que Gélica pagó al transportista; cubre el viaje de
+//                 vuelta del producto original + el del nuevo).
+//   - Sucursal:   gratis ($0).
+//   - Presencial: gratis ($0).
+// Al cliente se le muestra base * 1.06 (absorbe la comisión MP).
+const CAMBIO_DOMICILIO_FIJO = 4500;
 const SURCHARGE = 1.06;
-function getCambioPrecio(mode: "domicilio" | "sucursal" | "presencial"): number {
-  if (mode === "domicilio") return CAMBIO_PRECIO_DOMICILIO;
-  if (mode === "sucursal") return CAMBIO_PRECIO_SUCURSAL;
-  return CAMBIO_PRECIO_PRESENCIAL;
+function getCambioPrecio(
+  mode: "domicilio" | "sucursal" | "presencial",
+  originalShippingCost: number | null
+): number {
+  if (mode === "domicilio") return CAMBIO_DOMICILIO_FIJO + (originalShippingCost ?? 0);
+  return 0;
 }
 // Convierte un precio base a lo que el cliente paga (con sobrecargo silencioso de comisión MP).
 function publicPrice(base: number): number {
@@ -429,14 +434,24 @@ export default function HomePage() {
             shippingPhone: shipPhone,
             // Shipping method
             shippingMode: deliveryMode,
-            shippingMethodCode: deliveryMode === "presencial" ? "presencial-deposito" : (selectedShipping?.code || ""),
-            shippingMethodName: deliveryMode === "presencial"
-              ? "Retiro en depósito - La Espuela 2757, Ituzaingó (a coordinar)"
-              : (selectedShipping?.name || ""),
-            // Final amount the customer pays (already includes 6% surcharge)
-            shippingCost: deliveryMode === "presencial"
-              ? 0
-              : (selectedShipping ? publicPrice(getCambioPrecio(deliveryMode) + selectedShipping.price) : null),
+            shippingMethodCode:
+              deliveryMode === "presencial"
+                ? "presencial-deposito"
+                : deliveryMode === "sucursal"
+                  ? "cambio-sucursal"
+                  : "cambio-domicilio",
+            shippingMethodName:
+              deliveryMode === "presencial"
+                ? "Retiro en depósito - La Espuela 2757, Ituzaingó (a coordinar)"
+                : deliveryMode === "sucursal"
+                  ? "Cambio retiro en sucursal de Correo"
+                  : "Cambio envío a domicilio",
+            // Precio del cambio: domicilio = (4500 + shipping_cost_owner original) * 1.06.
+            // Sucursal y presencial = 0.
+            shippingCost:
+              deliveryMode === "domicilio"
+                ? publicPrice(getCambioPrecio("domicilio", orderInfo?.shippingCostOwner ?? null))
+                : 0,
           }),
         }),
       });
@@ -927,17 +942,39 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Step 3: Cambio - CP → Shipping method → Address/Recipient → Submit */}
+          {/* Step 3: Cambio - elegir modo → datos → submit */}
           {step === 3 && claimType === "cambio" && (
             <div className="space-y-5">
               <h2 className="text-xl font-semibold text-gray-900">Cambio de producto</h2>
 
-              {/* Resumen de precios */}
+              {/* Resumen de precio: fijo según modo elegido */}
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
-                {deliveryMode === "presencial" ? (
+                {deliveryMode === "domicilio" ? (
                   <>
                     <div className="flex justify-between text-sm text-gray-700">
-                      <span>Cambio presencial en depósito:</span>
+                      <span>Costo del cambio a domicilio:</span>
+                      <span className="font-semibold">
+                        ${publicPrice(getCambioPrecio("domicilio", orderInfo?.shippingCostOwner ?? null)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 -mt-1">
+                      Cubre el envío del producto original a nuestro depósito y el envío del producto nuevo a tu dirección.
+                    </p>
+                    <div className="border-t border-blue-200 pt-2 flex justify-between">
+                      <span className="font-semibold text-gray-900">Total</span>
+                      <span className="text-2xl font-bold text-gray-900">
+                        ${publicPrice(getCambioPrecio("domicilio", orderInfo?.shippingCostOwner ?? null)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-sm text-gray-700">
+                      <span>
+                        {deliveryMode === "sucursal"
+                          ? "Cambio retirando en sucursal de Correo:"
+                          : "Cambio presencial en depósito:"}
+                      </span>
                       <span className="font-semibold text-green-700">Sin costo</span>
                     </div>
                     <div className="border-t border-blue-200 pt-2 flex justify-between">
@@ -945,38 +982,16 @@ export default function HomePage() {
                       <span className="text-2xl font-bold text-green-700">Gratis</span>
                     </div>
                   </>
-                ) : (
-                  <>
-                    <div className="flex justify-between text-sm text-gray-700">
-                      <span>Costo del cambio (envíos):</span>
-                      <span className="font-semibold">${publicPrice(getCambioPrecio(deliveryMode)).toLocaleString("es-AR")}</span>
-                    </div>
-                    <p className="text-xs text-gray-500 -mt-1">
-                      Cubre el envío del producto original a nuestro depósito y el envío del producto nuevo a tu dirección.
-                    </p>
-                    {selectedShipping && (
-                      <div className="flex justify-between text-sm text-gray-700">
-                        <span>Envío ({selectedShipping.name}):</span>
-                        <span className="font-semibold">${publicPrice(selectedShipping.price).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      </div>
-                    )}
-                    <div className="border-t border-blue-200 pt-2 flex justify-between">
-                      <span className="font-semibold text-gray-900">Total</span>
-                      <span className="text-2xl font-bold text-gray-900">
-                        ${publicPrice(getCambioPrecio(deliveryMode) + (selectedShipping?.price || 0)).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </>
                 )}
               </div>
 
-              {/* Selector de modo (siempre visible arriba) */}
+              {/* Selector de modo */}
               <div className="space-y-3 border border-gray-200 rounded-xl p-4">
                 <h3 className="font-semibold text-gray-900">¿Cómo querés hacer el cambio?</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => { setDeliveryMode("domicilio"); setSelectedShippingCode(""); }}
+                    onClick={() => setDeliveryMode("domicilio")}
                     className={`py-3 px-3 rounded-lg border-2 text-sm font-medium transition text-left ${
                       deliveryMode === "domicilio"
                         ? "border-blue-600 bg-blue-50 text-blue-700"
@@ -984,23 +999,23 @@ export default function HomePage() {
                     }`}
                   >
                     <div className="font-semibold">Envío a domicilio</div>
-                    <div className="text-xs opacity-75 mt-0.5">Correo Argentino · pago</div>
+                    <div className="text-xs opacity-75 mt-0.5">Pago</div>
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setDeliveryMode("sucursal"); setSelectedShippingCode(""); }}
+                    onClick={() => setDeliveryMode("sucursal")}
                     className={`py-3 px-3 rounded-lg border-2 text-sm font-medium transition text-left ${
                       deliveryMode === "sucursal"
-                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        ? "border-green-600 bg-green-50 text-green-700"
                         : "border-gray-200 text-gray-600 hover:border-gray-300"
                     }`}
                   >
                     <div className="font-semibold">Retirar en sucursal</div>
-                    <div className="text-xs opacity-75 mt-0.5">Sucursal del Correo · pago</div>
+                    <div className="text-xs opacity-75 mt-0.5">Gratis</div>
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setDeliveryMode("presencial"); setSelectedShippingCode(""); setShipZipcode(""); }}
+                    onClick={() => { setDeliveryMode("presencial"); setShipZipcode(""); }}
                     className={`py-3 px-3 rounded-lg border-2 text-sm font-medium transition text-left ${
                       deliveryMode === "presencial"
                         ? "border-green-600 bg-green-50 text-green-700"
@@ -1033,85 +1048,11 @@ export default function HomePage() {
                 </div>
               )}
 
-              {/* Código postal + opciones de envío (solo domicilio/sucursal) */}
-              {(deliveryMode === "domicilio" || deliveryMode === "sucursal") && (
-                <div className="space-y-3 border border-gray-200 rounded-xl p-4">
-                  <h3 className="font-semibold text-gray-900">Calculá el costo del envío</h3>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      required
-                      value={shipZipcode}
-                      onChange={(e) => { setShipZipcode(e.target.value); setDomicilioOptions([]); setSucursalOptions([]); setSelectedShippingCode(""); }}
-                      className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                      placeholder="Código postal de destino"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => calculateShipping(shipZipcode)}
-                      disabled={calculatingShipping || !shipZipcode}
-                      className="bg-blue-600 text-white px-5 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {calculatingShipping ? "Calculando..." : "Calcular"}
-                    </button>
-                  </div>
-                  {shippingError && (
-                    <p className="text-sm text-red-600">{shippingError}</p>
-                  )}
-
-                  {(domicilioOptions.length > 0 || sucursalOptions.length > 0) && (
-                    <div className="space-y-2 pt-2">
-                      {(deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions).length === 0 ? (
-                        <p className="text-sm text-gray-600 italic">No hay opciones disponibles para este modo y CP. Probá con otro.</p>
-                      ) : (
-                        (deliveryMode === "domicilio" ? domicilioOptions : sucursalOptions).map((opt) => (
-                          <label
-                            key={opt.code}
-                            className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition ${
-                              selectedShippingCode === opt.code
-                                ? "border-blue-600 bg-blue-50"
-                                : "border-gray-200 hover:border-gray-300"
-                            }`}
-                          >
-                            <input
-                              type="radio"
-                              name="shipping-option"
-                              value={opt.code}
-                              checked={selectedShippingCode === opt.code}
-                              onChange={() => setSelectedShippingCode(opt.code)}
-                              className="mt-1"
-                            />
-                            <div className="flex-1">
-                              <div className="flex justify-between gap-2">
-                                <span className="text-sm font-medium text-gray-900">{opt.name}</span>
-                                <span className="text-sm font-semibold text-gray-900 whitespace-nowrap">
-                                  ${publicPrice(opt.price).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                              </div>
-                              {opt.branches && opt.branches.length > 0 && (
-                                <details className="mt-1.5">
-                                  <summary className="text-xs text-blue-600 cursor-pointer">Ver sucursales ({opt.branches.length})</summary>
-                                  <ul className="text-xs text-gray-600 mt-1 space-y-0.5 pl-2">
-                                    {opt.branches.slice(0, 10).map((b, i) => (
-                                      <li key={i} className="capitalize">• {b}</li>
-                                    ))}
-                                  </ul>
-                                </details>
-                              )}
-                            </div>
-                          </label>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Province + city (only for domicilio/sucursal with selected option) */}
-              {selectedShipping && deliveryMode !== "presencial" && (
+              {/* Datos de envío / sucursal (no presencial) */}
+              {deliveryMode !== "presencial" && (
                 <div className="space-y-3 border border-gray-200 rounded-xl p-4">
                   <h3 className="font-semibold text-gray-900">
-                    {deliveryMode === "domicilio" ? "Dirección de entrega" : "Localidad de la sucursal"}
+                    {deliveryMode === "domicilio" ? "Dirección de entrega" : "Sucursal de Correo donde retirar"}
                   </h3>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -1145,6 +1086,17 @@ export default function HomePage() {
                         placeholder="Ciudad"
                       />
                     </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Código postal *</label>
+                    <input
+                      type="text"
+                      required
+                      value={shipZipcode}
+                      onChange={(e) => setShipZipcode(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                      placeholder="Ej: 1425"
+                    />
                   </div>
 
                   {/* Address only for domicilio */}
@@ -1196,62 +1148,78 @@ export default function HomePage() {
                       </div>
                     </>
                   )}
+
+                  {/* For sucursal we just need the address/branch reference */}
+                  {deliveryMode === "sucursal" && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Sucursal de Correo preferida *</label>
+                      <input
+                        type="text"
+                        required
+                        value={shipAddress}
+                        onChange={(e) => setShipAddress(e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                        placeholder="Ej: Sucursal Correo Argentino Rivadavia 1234, CABA"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Si no sabés cuál es la más cercana, dejá la dirección aproximada y te confirmamos por WhatsApp.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Datos del destinatario (siempre que se haya elegido un modo válido) */}
-              {(selectedShipping || deliveryMode === "presencial") && (
-                <div className="space-y-3 border border-gray-200 rounded-xl p-4">
-                  <h3 className="font-semibold text-gray-900">
-                    {deliveryMode === "presencial" ? "Tus datos de contacto" : "Datos del destinatario"}
-                  </h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
-                      <input
-                        type="text"
-                        required
-                        value={shipRecipientName}
-                        onChange={(e) => setShipRecipientName(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                        placeholder="Nombre"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Apellido <span className="text-gray-400">(opcional)</span></label>
-                      <input
-                        type="text"
-                        value={shipRecipientLastName}
-                        onChange={(e) => setShipRecipientLastName(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                        placeholder="Apellido"
-                      />
-                    </div>
+              {/* Datos del destinatario / contacto */}
+              <div className="space-y-3 border border-gray-200 rounded-xl p-4">
+                <h3 className="font-semibold text-gray-900">
+                  {deliveryMode === "presencial" ? "Tus datos de contacto" : "Datos del destinatario"}
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
+                    <input
+                      type="text"
+                      required
+                      value={shipRecipientName}
+                      onChange={(e) => setShipRecipientName(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                      placeholder="Nombre"
+                    />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-gray-400">(opcional)</span></label>
-                      <input
-                        type="email"
-                        value={customerEmail}
-                        disabled
-                        className="w-full border border-gray-200 rounded-lg px-4 py-2.5 bg-gray-50 text-gray-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono *</label>
-                      <input
-                        type="tel"
-                        required
-                        value={shipPhone}
-                        onChange={(e) => setShipPhone(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                        placeholder="Ej: 1155667788"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Apellido <span className="text-gray-400">(opcional)</span></label>
+                    <input
+                      type="text"
+                      value={shipRecipientLastName}
+                      onChange={(e) => setShipRecipientLastName(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                      placeholder="Apellido"
+                    />
                   </div>
                 </div>
-              )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-gray-400">(opcional)</span></label>
+                    <input
+                      type="email"
+                      value={customerEmail}
+                      disabled
+                      className="w-full border border-gray-200 rounded-lg px-4 py-2.5 bg-gray-50 text-gray-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Teléfono *</label>
+                    <input
+                      type="tel"
+                      required
+                      value={shipPhone}
+                      onChange={(e) => setShipPhone(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                      placeholder="Ej: 1155667788"
+                    />
+                  </div>
+                </div>
+              </div>
 
               <div className="flex gap-3">
                 <button type="button" onClick={() => setStep(2)} className="flex-1 border border-gray-300 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-50 transition">
@@ -1264,11 +1232,11 @@ export default function HomePage() {
                     !shipRecipientName ||
                     !shipPhone ||
                     (deliveryMode !== "presencial" && (
-                      !selectedShipping ||
                       !shipZipcode ||
                       !shipProvince ||
                       !shipCity ||
-                      (deliveryMode === "domicilio" && (!shipAddress || !shipNumber))
+                      (deliveryMode === "domicilio" && (!shipAddress || !shipNumber)) ||
+                      (deliveryMode === "sucursal" && !shipAddress)
                     ))
                   }
                   className="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
