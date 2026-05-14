@@ -173,8 +173,8 @@ export default function AdminDashboard({
   // Crea una orden de reenvío en Tiendanube vía API (POST /orders). La orden
   // aparece en Ventas con los productos del pedido original + nota "REENVÍO de #X".
   // El merchant después entra al admin para generar el envío desde Envío Nube.
-  async function createShipmentForClaim(claimId: string) {
-    if (!confirm("¿Crear orden de reenvío en Tiendanube?\n\nVa a aparecer en Ventas con los productos del pedido original. Después tenés que entrar al admin para generar el envío.")) {
+  async function createShipmentForClaim(claimId: string, overrideDelivered = false) {
+    if (!overrideDelivered && !confirm("¿Crear orden de reenvío en Tiendanube?\n\nVa a aparecer en Ventas con los productos del pedido original. Después tenés que entrar al admin para generar el envío.")) {
       return;
     }
     setUpdating(true);
@@ -184,9 +184,27 @@ export default function AdminDashboard({
       const res = await fetch("/api/worker/create-shipment-for-claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claimId }),
+        body: JSON.stringify({ claimId, overrideDelivered }),
       });
       const data = await res.json();
+      // Si la orden original figura como entregada, pedimos confirmación explícita
+      if (res.status === 409 && data.requiresOverride) {
+        const trackingHint = data.originalTrackingUrl
+          ? `\n\nTracking: ${data.originalTrackingCode || "(ver link)"}\n${data.originalTrackingUrl}`
+          : data.originalTrackingCode
+            ? `\n\nTracking: ${data.originalTrackingCode}`
+            : "";
+        const ok = confirm(
+          `⚠️ ATENCIÓN\n\nEl pedido original figura como ENTREGADO al cliente.\nReenviar de todas formas puede significar que el cliente recibió 2 veces.\n${trackingHint}\n\n¿Confirmás reenviar igualmente? (asegurate de haber verificado con el cliente)`
+        );
+        if (ok) {
+          await createShipmentForClaim(claimId, true);
+        } else {
+          setRobotResult(`🛑 Reenvío cancelado: el pedido figura como entregado.`);
+        }
+        setUpdating(false);
+        return;
+      }
       if (!res.ok || data.ok === false) {
         setRobotResult(`❌ ${data.error || `HTTP ${res.status}`}`);
       } else {

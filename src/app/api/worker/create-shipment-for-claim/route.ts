@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
-  const { claimId } = await req.json();
+  const { claimId, overrideDelivered = false } = await req.json();
   if (!claimId) {
     return NextResponse.json({ error: "Falta claimId" }, { status: 400 });
   }
@@ -66,6 +66,25 @@ export async function POST(req: NextRequest) {
     );
   }
   const original = formatOrderInfo(originalRaw as Record<string, unknown>);
+
+  // Anti-fraude: si el pedido original figura como ENTREGADO al cliente, frenamos.
+  // El admin puede forzar el reenvío pasando overrideDelivered: true (después de
+  // verificar con el cliente). Esto evita que un cliente que ya recibió pida
+  // reenvío "gratis" (pagando solo el envío).
+  const originalStatus = (original.shippingStatus || "").toLowerCase();
+  if (originalStatus === "delivered" && !overrideDelivered) {
+    return NextResponse.json(
+      {
+        ok: false,
+        requiresOverride: true,
+        error: "El pedido original figura como ENTREGADO al cliente. Verificá con el cliente antes de reenviar.",
+        originalShippingStatus: original.shippingStatus,
+        originalTrackingCode: original.shippingTracking,
+        originalTrackingUrl: original.shippingTrackingUrl,
+      },
+      { status: 409 }
+    );
+  }
 
   // Productos: variant_id + quantity del original, con price=0 para que la orden
   // tenga subtotal $0 (es reenvío, el cliente NO está pagando el producto otra
