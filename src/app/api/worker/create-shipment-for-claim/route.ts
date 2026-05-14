@@ -9,6 +9,7 @@ import {
   createOrder,
   buildOrderAdminUrl,
 } from "@/lib/tiendanube";
+import { sendTemplate, normalizePhoneAR, claimTypeForMessage } from "@/lib/whatsapp";
 
 // POST /api/worker/create-shipment-for-claim
 // Body: { claimId: string }
@@ -222,11 +223,49 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Mandar WhatsApp de confirmación al cliente: el reenvío fue procesado.
+    // Cuando Envío Nube genere la etiqueta (despacho), un webhook separado se
+    // encargará de mandar el segundo WhatsApp con tracking.
+    let whatsappSent = false;
+    let whatsappError: string | null = null;
+    try {
+      const phone = normalizePhoneAR(claim.shippingPhone || claim.customerPhone);
+      if (phone) {
+        const result = await sendTemplate({
+          to: phone,
+          params: [
+            claim.customerName || "cliente",
+            claimTypeForMessage(claim.type),
+            String(claim.orderNumber),
+            "confirmado",
+            `Estamos procesando tu reenvío. Te avisamos por acá cuando salga con el código de seguimiento.`,
+          ],
+        });
+        whatsappSent = result.ok;
+        whatsappError = result.ok ? null : result.error || "Error desconocido";
+        await prisma.claim.update({
+          where: { id: claimId },
+          data: {
+            whatsappStatus: result.ok ? "sent" : "failed",
+            whatsappError,
+            whatsappSentAt: result.ok ? new Date() : null,
+          },
+        });
+      } else {
+        whatsappError = "Sin teléfono válido para WhatsApp";
+      }
+    } catch (e) {
+      whatsappError = e instanceof Error ? e.message : "Error mandando WhatsApp";
+      console.error("[create-reorder] WhatsApp error:", e);
+    }
+
     return NextResponse.json({
       ok: true,
       orderId: newOrderId,
       orderNumber: newOrderNumber,
       adminUrl,
+      whatsappSent,
+      whatsappError,
       note: "Orden de reenvío creada. Entrá al admin de Tiendanube para generar el envío desde Envío Nube.",
     });
   } catch (err) {

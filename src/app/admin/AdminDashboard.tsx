@@ -190,7 +190,12 @@ export default function AdminDashboard({
       if (!res.ok || data.ok === false) {
         setRobotResult(`❌ ${data.error || `HTTP ${res.status}`}`);
       } else {
-        setRobotResult(`✅ Orden de reenvío creada · #${data.orderNumber}`);
+        const waMsg = data.whatsappSent
+          ? " · 📱 WhatsApp enviado"
+          : data.whatsappError
+            ? ` · ⚠️ WhatsApp falló: ${data.whatsappError}`
+            : "";
+        setRobotResult(`✅ Orden de reenvío creada · #${data.orderNumber}${waMsg}`);
         const refreshRes = await fetch("/api/claims");
         if (refreshRes.ok) {
           const all = await refreshRes.json();
