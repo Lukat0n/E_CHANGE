@@ -109,13 +109,13 @@ export async function POST(req: NextRequest) {
               carrierStatus = result.status;
               carrierText = result.rawCarrierStatus || null;
               console.log(
-                `[claims POST reenvio] MiCorreo API: status=${carrierStatus} raw="${result.rawCarrierStatus || ""}" events=${result.events?.length || 0}`
+                `[claims POST reenvio] PAQ.AR API: status=${carrierStatus} matched="${result.matched || ""}" raw="${result.rawCarrierStatus || ""}" events=${result.events?.length || 0}`
               );
             } else {
-              console.warn("[claims POST reenvio] MiCorreo API failed:", result.error);
+              console.warn("[claims POST reenvio] PAQ.AR API failed:", result.error);
             }
           } catch (err) {
-            console.error("[claims POST] MiCorreo API error:", err);
+            console.error("[claims POST] PAQ.AR API error:", err);
           }
         }
 
