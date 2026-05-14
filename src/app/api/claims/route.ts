@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { findStore } from "@/lib/store";
 import { isAuthenticated } from "@/lib/auth";
 import { createPreference } from "@/lib/mercadopago";
+import { getOrderByNumber, formatOrderInfo } from "@/lib/tiendanube";
 
 // GET: List claims (admin)
 export async function GET(req: NextRequest) {
@@ -64,6 +65,47 @@ export async function POST(req: NextRequest) {
   const store = await findStore(storeId || "default");
   if (!store) {
     return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 });
+  }
+
+  // Para reenvíos: el paquete original tiene que figurar como DEVUELTO o PERDIDO
+  // antes de aceptar el pedido. Esto evita que un cliente impaciente pida reenvío
+  // cuando su paquete todavía está en tránsito (terminaría recibiendo 2 envíos).
+  // El admin igual puede crear órdenes manuales desde el dashboard si hay un caso
+  // especial verificado.
+  if (type === "reenvio") {
+    try {
+      const originalRaw = await getOrderByNumber(store.accessToken, store.storeId, orderNumber);
+      if (originalRaw) {
+        const original = formatOrderInfo(originalRaw as Record<string, unknown>);
+        const status = (original.shippingStatus || "").toLowerCase();
+        const allowedForReenvio = ["returned", "in_return", "lost"];
+        if (!allowedForReenvio.includes(status)) {
+          let userMsg = "";
+          if (status === "delivered") {
+            userMsg = "Tu pedido figura como ENTREGADO. Si no lo recibiste, contactá directamente a la tienda.";
+          } else if (status === "shipped" || status === "in_transit") {
+            userMsg = "Tu pedido todavía está en tránsito. Tenés que esperar a que el correo intente entregarlo. Solo podés pedir reenvío si el paquete vuelve al depósito.";
+          } else if (status === "unpacked" || status === "packed") {
+            userMsg = "Tu pedido todavía no fue despachado. Esperá a que salga del depósito.";
+          } else {
+            userMsg = `Solo podés pedir reenvío si el paquete fue devuelto al depósito o declarado perdido. Estado actual: ${original.shippingStatus || "desconocido"}.`;
+          }
+          return NextResponse.json(
+            {
+              error: userMsg,
+              shippingStatus: original.shippingStatus,
+              trackingCode: original.shippingTracking,
+              trackingUrl: original.shippingTrackingUrl,
+            },
+            { status: 400 }
+          );
+        }
+      }
+    } catch (err) {
+      // Si falla la consulta a Tiendanube, NO bloqueamos al cliente — log y seguimos.
+      // El admin igual chequea de nuevo antes de crear la orden de reenvío.
+      console.error("[claims POST] no se pudo verificar status original:", err);
+    }
   }
 
   try {
