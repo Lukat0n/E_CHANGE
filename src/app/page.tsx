@@ -970,11 +970,7 @@ export default function HomePage() {
                 ) : (
                   <>
                     <div className="flex justify-between text-sm text-gray-700">
-                      <span>
-                        {deliveryMode === "sucursal"
-                          ? "Cambio retirando en sucursal de Correo:"
-                          : "Cambio presencial en depósito:"}
-                      </span>
+                      <span>Cambio presencial en depósito:</span>
                       <span className="font-semibold text-green-700">Sin costo</span>
                     </div>
                     <div className="border-t border-blue-200 pt-2 flex justify-between">
@@ -985,10 +981,10 @@ export default function HomePage() {
                 )}
               </div>
 
-              {/* Selector de modo */}
+              {/* Selector de modo: solo domicilio o presencial */}
               <div className="space-y-3 border border-gray-200 rounded-xl p-4">
                 <h3 className="font-semibold text-gray-900">¿Cómo querés hacer el cambio?</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setDeliveryMode("domicilio")}
@@ -1000,18 +996,6 @@ export default function HomePage() {
                   >
                     <div className="font-semibold">Envío a domicilio</div>
                     <div className="text-xs opacity-75 mt-0.5">Pago</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDeliveryMode("sucursal")}
-                    className={`py-3 px-3 rounded-lg border-2 text-sm font-medium transition text-left ${
-                      deliveryMode === "sucursal"
-                        ? "border-green-600 bg-green-50 text-green-700"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
-                    }`}
-                  >
-                    <div className="font-semibold">Retirar en sucursal</div>
-                    <div className="text-xs opacity-75 mt-0.5">Gratis</div>
                   </button>
                   <button
                     type="button"
@@ -1048,12 +1032,10 @@ export default function HomePage() {
                 </div>
               )}
 
-              {/* Datos de envío / sucursal (no presencial) */}
-              {deliveryMode !== "presencial" && (
+              {/* Datos de envío (solo domicilio) */}
+              {deliveryMode === "domicilio" && (
                 <div className="space-y-3 border border-gray-200 rounded-xl p-4">
-                  <h3 className="font-semibold text-gray-900">
-                    {deliveryMode === "domicilio" ? "Dirección de entrega" : "Sucursal de Correo donde retirar"}
-                  </h3>
+                  <h3 className="font-semibold text-gray-900">Dirección de entrega</h3>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Provincia *</label>
@@ -1149,23 +1131,6 @@ export default function HomePage() {
                     </>
                   )}
 
-                  {/* For sucursal we just need the address/branch reference */}
-                  {deliveryMode === "sucursal" && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Sucursal de Correo preferida *</label>
-                      <input
-                        type="text"
-                        required
-                        value={shipAddress}
-                        onChange={(e) => setShipAddress(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
-                        placeholder="Ej: Sucursal Correo Argentino Rivadavia 1234, CABA"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Si no sabés cuál es la más cercana, dejá la dirección aproximada y te confirmamos por WhatsApp.
-                      </p>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -1231,12 +1196,12 @@ export default function HomePage() {
                     loading ||
                     !shipRecipientName ||
                     !shipPhone ||
-                    (deliveryMode !== "presencial" && (
+                    (deliveryMode === "domicilio" && (
                       !shipZipcode ||
                       !shipProvince ||
                       !shipCity ||
-                      (deliveryMode === "domicilio" && (!shipAddress || !shipNumber)) ||
-                      (deliveryMode === "sucursal" && !shipAddress)
+                      !shipAddress ||
+                      !shipNumber
                     ))
                   }
                   className="flex-1 bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
