@@ -239,6 +239,8 @@ export async function POST(req: NextRequest) {
         reorderOrderNumber: newOrderNumber,
         reorderAdminUrl: adminUrl,
         reorderCreatedAt: new Date(),
+        // Aprobar el claim automáticamente (acción combinada: aprobar + procesar)
+        status: "aprobado",
       },
     });
 
