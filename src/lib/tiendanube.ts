@@ -36,6 +36,110 @@ export async function getStoreInfo(accessToken: string, storeId: string) {
   return res.json();
 }
 
+// Tiendanube acepta solo un subset de country codes; Argentina = "AR".
+// Provincias se envían como nombre completo (ej. "Buenos Aires").
+interface CreateOrderProduct {
+  variant_id: number;
+  quantity: number;
+  price?: string | number;
+}
+
+interface CreateOrderAddress {
+  first_name?: string;
+  last_name?: string;
+  address?: string;
+  number?: string;
+  floor?: string | null;
+  locality?: string | null;
+  city?: string;
+  province?: string;
+  zipcode?: string;
+  country?: string;
+  phone?: string;
+}
+
+interface CreateOrderPayload {
+  currency?: string;
+  language?: string;
+  status?: string;
+  gateway?: string;
+  payment_status?: string;
+  products: CreateOrderProduct[];
+  inventory_behaviour?: "decrement" | "bypass";
+  customer: { email?: string; name?: string; phone?: string; document?: string };
+  billing_address?: CreateOrderAddress;
+  shipping_address?: CreateOrderAddress;
+  shipping_cost_customer?: number;
+  shipping_cost_owner?: number;
+  send_confirmation_email?: boolean;
+  send_fulfillment_email?: boolean;
+  note?: string;
+}
+
+/**
+ * Crea una orden nueva via API. Soporte oficial de Tiendanube confirmó que es
+ * el endpoint correcto para reenvíos. Los pedidos por API NO suman al dashboard
+ * de Estadísticas pero sí quedan listados en Ventas con productos visibles, lo
+ * que nos permite que el merchant genere el envío desde Envío Nube admin.
+ *
+ * Importante:
+ *  - inventory_behaviour: "bypass" → no descontar stock (el original ya descontó).
+ *  - send_confirmation_email / send_fulfillment_email: false → no spamear al cliente.
+ *  - status: "open" + payment_status: "paid" → la orden queda lista para empacar.
+ */
+export async function createOrder(
+  accessToken: string,
+  storeId: string,
+  payload: CreateOrderPayload
+): Promise<{ ok: true; order: Record<string, unknown> } | { ok: false; status: number; error: string }> {
+  const body = {
+    currency: "ARS",
+    language: "es",
+    status: "open",
+    gateway: "mercadopago",
+    inventory_behaviour: "bypass" as const,
+    send_confirmation_email: false,
+    send_fulfillment_email: false,
+    ...payload,
+  };
+
+  const res = await fetch(`${TIENDANUBE_API}/${storeId}/orders`, {
+    method: "POST",
+    headers: headers(accessToken),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let errText = `HTTP ${res.status}`;
+    try {
+      const j = (await res.json()) as { message?: unknown; description?: unknown };
+      const msg = typeof j.message === "string" ? j.message : typeof j.description === "string" ? j.description : null;
+      errText = msg ? `${errText}: ${msg}` : `${errText}: ${JSON.stringify(j).slice(0, 300)}`;
+    } catch {
+      try {
+        errText += `: ${(await res.text()).slice(0, 300)}`;
+      } catch {}
+    }
+    return { ok: false, status: res.status, error: errText };
+  }
+
+  const order = (await res.json()) as Record<string, unknown>;
+  return { ok: true, order };
+}
+
+/**
+ * Construye el URL del admin de Tiendanube para una orden. Útil para linkear al
+ * merchant después de crear la orden de reenvío vía API.
+ */
+export function buildOrderAdminUrl(orderId: number | string, storeDomain?: string | null): string {
+  if (storeDomain) {
+    // gelica.com.ar → gelica.mitiendanube.com/admin/orders/{id}
+    const subdomain = storeDomain.replace(/^https?:\/\//, "").split(".")[0];
+    return `https://${subdomain}.mitiendanube.com/admin/orders/${orderId}`;
+  }
+  return `https://www.tiendanube.com/admin/v2/orders/${orderId}`;
+}
+
 export function formatOrderInfo(order: Record<string, unknown>, storeDomain?: string) {
   const shipping = order.shipping_address as Record<string, unknown> | null;
   const shippingStatus = order.shipping_status as string;

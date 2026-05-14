@@ -1,28 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isAuthenticated } from "@/lib/auth";
-import { sendTemplate, normalizePhoneAR, claimTypeForMessage } from "@/lib/whatsapp";
+import { findStore } from "@/lib/store";
+import {
+  getOrderByNumber,
+  getStoreInfo,
+  formatOrderInfo,
+  createOrder,
+  buildOrderAdminUrl,
+} from "@/lib/tiendanube";
 
 // POST /api/worker/create-shipment-for-claim
-// Body: { claimId: string, submit?: boolean }
+// Body: { claimId: string }
 //
-// Toma un claim del DB, mapea sus campos al formato que espera el worker,
-// y dispara la creación del envío. Si submit=false (default) hace dry run.
+// Para reenvíos: crea una NUEVA orden en Tiendanube vía API copiando los
+// productos del pedido original, marcada como paid (porque el cliente ya pagó
+// el envío via MP) y con una nota "REENVÍO de orden #X". El merchant después
+// entra al admin de Tiendanube y genera el envío desde Envío Nube como
+// normalmente lo haría.
+//
+// Antes esto llamaba al worker (bot Playwright) para crear el envío manual,
+// pero el flujo nuevo deja todo trackeado en el admin con productos visibles
+// y permite manage normal.
 export async function POST(req: NextRequest) {
   const authenticated = await isAuthenticated();
   if (!authenticated) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
-  const { claimId, submit = false } = await req.json();
+  const { claimId } = await req.json();
   if (!claimId) {
     return NextResponse.json({ error: "Falta claimId" }, { status: 400 });
-  }
-
-  const workerUrl = process.env.WORKER_URL;
-  const workerKey = process.env.WORKER_API_KEY;
-  if (!workerUrl || !workerKey) {
-    return NextResponse.json({ error: "WORKER_URL/WORKER_API_KEY no configuradas" }, { status: 500 });
   }
 
   const claim = await prisma.claim.findUnique({ where: { id: claimId } });
@@ -30,127 +38,146 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Claim no encontrado" }, { status: 404 });
   }
 
-  // Mapear claim → input del worker
+  if (claim.type !== "reenvio") {
+    return NextResponse.json(
+      { error: `Tipo ${claim.type} no soportado por API order. Solo reenvíos por ahora.` },
+      { status: 400 }
+    );
+  }
   if (claim.shippingMode === "presencial") {
     return NextResponse.json(
-      { error: "Los cambios presenciales no generan envío automático (se retira en depósito)." },
+      { error: "Los retiros presenciales no generan orden de reenvío." },
       { status: 400 }
     );
   }
 
-  const mode = claim.shippingMode === "sucursal" ? "sucursal" : "domicilio";
+  const store = await findStore(claim.storeId);
+  if (!store) {
+    return NextResponse.json({ error: "Tienda no encontrada" }, { status: 404 });
+  }
 
-  // Para sucursal, claim.shippingAddress guarda el NOMBRE de la sucursal elegida
-  // (ej. "Sucursal Av. Corrientes 1234"). El bot lo usa para matchear el radio en
-  // el step de quotation. Para domicilio es la calle real.
-  const branchName = mode === "sucursal" ? (claim.shippingAddress || "") : "";
+  // Buscar la orden original para copiar productos y addresses
+  const originalRaw = await getOrderByNumber(store.accessToken, store.storeId, claim.orderNumber);
+  if (!originalRaw) {
+    return NextResponse.json(
+      { error: `No se encontró la orden original #${claim.orderNumber}` },
+      { status: 404 }
+    );
+  }
+  const original = formatOrderInfo(originalRaw as Record<string, unknown>);
 
-  const input = {
-    mode,
-    destZip: claim.shippingZipcode || "",
-    alto: 10,
-    ancho: 15,
-    profundidad: 10,
-    peso: 500, // TODO: tomar peso real del producto cuando lo tengamos
-    ship: {
-      provincia: claim.shippingProvince || "",
-      ciudad: claim.shippingCity || "",
-      calle: claim.shippingAddress || "",
-      numero: claim.shippingNumber || "",
-      departamento: claim.shippingFloor || undefined,
-      barrio: claim.shippingNeighborhood || undefined,
-    },
-    recipient: {
-      nombre: claim.shippingRecipientName || claim.customerName || "",
-      apellido: claim.shippingRecipientLastName || "",
-      email: claim.customerEmail || "",
-      telefono: claim.shippingPhone || claim.customerPhone || "",
-    },
-    shippingMethodPreference: claim.shippingMethodName || undefined,
-    branchName,
-    submit,
+  // Productos: usamos los variant_id + quantity del original. No seteamos price,
+  // así Tiendanube usa el precio default del variant (la orden refleja valores
+  // reales pero NO suma a estadísticas porque es API-created).
+  const products = original.products
+    .filter((p) => p.variantId != null)
+    .map((p) => ({
+      variant_id: p.variantId as number,
+      quantity: p.quantity || 1,
+    }));
+
+  if (products.length === 0) {
+    return NextResponse.json(
+      { error: "La orden original no tiene productos con variant_id válido" },
+      { status: 400 }
+    );
+  }
+
+  // Dirección de envío: si el cliente eligió custom, usamos los campos del claim.
+  // Para sucursal, address va con el nombre de la sucursal (mismo formato que
+  // venía guardando shippingAddress).
+  const useCustomAddress =
+    !!claim.shippingAddress ||
+    !!claim.shippingZipcode; // si tenemos data en el claim, asumimos custom
+  const shippingAddress = useCustomAddress
+    ? {
+        first_name: claim.shippingRecipientName || claim.customerName || "",
+        last_name: claim.shippingRecipientLastName || "",
+        address: claim.shippingAddress || "",
+        number: claim.shippingNumber || "",
+        floor: claim.shippingFloor || null,
+        locality: claim.shippingNeighborhood || null,
+        city: claim.shippingCity || "",
+        province: claim.shippingProvince || "",
+        zipcode: claim.shippingZipcode || "",
+        country: "AR",
+        phone: claim.shippingPhone || claim.customerPhone || "",
+      }
+    : undefined; // si no se setea, Tiendanube usará la de la orden... pero como
+                 // estamos creando una orden nueva, mejor mandar siempre.
+
+  const note = `REENVÍO de orden #${claim.orderNumber}${
+    claim.description ? ` — ${claim.description.slice(0, 200)}` : ""
+  }`;
+
+  const customer = {
+    email: claim.customerEmail || original.customer.email || "",
+    name:
+      (claim.shippingRecipientName ? `${claim.shippingRecipientName} ${claim.shippingRecipientLastName || ""}`.trim() : "") ||
+      claim.customerName ||
+      original.customer.name ||
+      "",
+    phone: claim.shippingPhone || claim.customerPhone || original.customer.phone || "",
   };
 
+  // shipping_cost_owner: lo que paga el merchant al transportista. Lo guardamos
+  // como referencia (el merchant podría comparar después). shipping_cost_customer:
+  // 0 porque el cliente pagó via MP, no via la orden de Tiendanube.
+  const shippingCostOwner = claim.shippingCost ?? null;
+
+  const payload = {
+    payment_status: "paid",
+    products,
+    customer,
+    shipping_address: shippingAddress,
+    billing_address: shippingAddress, // misma dirección para billing
+    shipping_cost_customer: 0,
+    ...(shippingCostOwner != null ? { shipping_cost_owner: shippingCostOwner } : {}),
+    note,
+  };
+
+  // Resolver dominio para el link al admin (gelica.com.ar → gelica.mitiendanube.com)
+  let storeDomain: string | null = null;
   try {
-    const res = await fetch(`${workerUrl.replace(/\/$/, "")}/api/shipment`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": workerKey },
-      body: JSON.stringify(input),
-      signal: AbortSignal.timeout(240000), // 4 min: incluye crear envío + generar etiqueta
-    });
-    const data = await res.json();
+    const info = await getStoreInfo(store.accessToken, store.storeId);
+    if (info?.url_with_protocol) storeDomain = info.url_with_protocol as string;
+    else if (info?.original_domain) storeDomain = info.original_domain as string;
+  } catch {}
 
-    // Si el robot creó el envío y obtuvo tracking, lo guardamos en el claim
-    // y disparamos WhatsApp automáticamente al cliente con el código.
-    let whatsappSent = false;
-    let whatsappError: string | null = null;
-    if (data?.submitted && (data?.trackingCode || data?.postSubmitUrl)) {
-      try {
-        await prisma.claim.update({
-          where: { id: claimId },
-          data: {
-            shipmentTrackingCode: data.trackingCode || null,
-            shipmentTrackingUrl: data.trackingUrl || null,
-            shipmentRobotUrl: data.postSubmitUrl || null,
-          },
-        });
-      } catch (e) {
-        console.error("[create-shipment-for-claim] no se pudo guardar tracking:", e);
-      }
-
-      // Mandar WhatsApp automáticamente con el tracking
-      if (data?.trackingCode || data?.trackingUrl) {
-        try {
-          const phone = normalizePhoneAR(claim.shippingPhone || claim.customerPhone);
-          if (phone) {
-            const trackingUrl = data.trackingUrl || null;
-            const trackingMsg = trackingUrl
-              ? `Tu envío salió. Código de seguimiento: ${data.trackingCode}. Seguilo acá: ${trackingUrl}`
-              : data.trackingCode
-                ? `Tu envío salió. Código de seguimiento: ${data.trackingCode}. Podés rastrearlo desde la web del transportista.`
-                : `Tu envío salió.`;
-
-            const result = await sendTemplate({
-              to: phone,
-              params: [
-                claim.customerName || "cliente",
-                claimTypeForMessage(claim.type),
-                String(claim.orderNumber),
-                "enviada",
-                trackingMsg,
-              ],
-            });
-
-            whatsappSent = result.ok;
-            whatsappError = result.ok ? null : (result.error || "Error desconocido");
-
-            await prisma.claim.update({
-              where: { id: claimId },
-              data: {
-                whatsappStatus: result.ok ? "sent" : "failed",
-                whatsappError,
-                whatsappSentAt: result.ok ? new Date() : null,
-              },
-            });
-
-            console.log(`[create-shipment-for-claim] WhatsApp con tracking: ${result.ok ? "OK" : "FAILED"} ${whatsappError || ""}`);
-          } else {
-            whatsappError = "Sin teléfono válido para mandar WhatsApp";
-          }
-        } catch (e) {
-          whatsappError = e instanceof Error ? e.message : "Error mandando WhatsApp";
-          console.error("[create-shipment-for-claim] error mandando WhatsApp:", e);
-        }
-      }
+  try {
+    const result = await createOrder(store.accessToken, store.storeId, payload);
+    if (!result.ok) {
+      return NextResponse.json(
+        { ok: false, error: result.error },
+        { status: result.status || 502 }
+      );
     }
 
-    return NextResponse.json(
-      { ...data, whatsappSent, whatsappError },
-      { status: res.status }
-    );
+    const newOrder = result.order;
+    const newOrderId = newOrder.id as number;
+    const newOrderNumber = String(newOrder.number ?? "");
+    const adminUrl = buildOrderAdminUrl(newOrderId, storeDomain);
+
+    await prisma.claim.update({
+      where: { id: claimId },
+      data: {
+        reorderOrderId: newOrderId,
+        reorderOrderNumber: newOrderNumber,
+        reorderAdminUrl: adminUrl,
+        reorderCreatedAt: new Date(),
+      },
+    });
+
+    return NextResponse.json({
+      ok: true,
+      orderId: newOrderId,
+      orderNumber: newOrderNumber,
+      adminUrl,
+      note: "Orden de reenvío creada. Entrá al admin de Tiendanube para generar el envío desde Envío Nube.",
+    });
   } catch (err) {
     return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : "Error llamando al worker" },
+      { ok: false, error: err instanceof Error ? err.message : "Error creando la orden via API" },
       { status: 502 }
     );
   }

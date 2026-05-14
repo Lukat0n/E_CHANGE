@@ -39,6 +39,10 @@ interface Claim {
   shipmentTrackingCode: string | null;
   shipmentTrackingUrl: string | null;
   shipmentRobotUrl: string | null;
+  reorderOrderId: number | null;
+  reorderOrderNumber: string | null;
+  reorderAdminUrl: string | null;
+  reorderCreatedAt: string | Date | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }

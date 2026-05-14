@@ -56,10 +56,15 @@ model Claim {
   whatsappStatus       String?   // null | "sent" | "failed"
   whatsappError        String?   // last error message if failed
   whatsappSentAt       DateTime?
-  // Robot-created shipment tracking
+  // Robot-created shipment tracking (legacy, mantenido por compat)
   shipmentTrackingCode String?   // ej. HC431755210AR (Correo Argentino)
   shipmentTrackingUrl  String?   // URL pública para que el cliente siga el envío
   shipmentRobotUrl     String?   // URL del envío en el admin de Tiendanube
+  // Reenvío via API: orden nueva creada en Tiendanube para el reenvío
+  reorderOrderId       Int?      // Tiendanube order id de la orden de reenvío
+  reorderOrderNumber   String?   // # de orden Tiendanube
+  reorderAdminUrl      String?   // link al admin para que el merchant genere el envío
+  reorderCreatedAt     DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

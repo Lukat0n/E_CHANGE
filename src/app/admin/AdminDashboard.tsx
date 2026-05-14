@@ -38,6 +38,10 @@ interface Claim {
   shipmentTrackingCode: string | null;
   shipmentTrackingUrl: string | null;
   shipmentRobotUrl: string | null;
+  reorderOrderId: number | null;
+  reorderOrderNumber: string | null;
+  reorderAdminUrl: string | null;
+  reorderCreatedAt: string | Date | null;
   createdAt: string | Date;
   store: { storeName: string | null; storeId: string };
 }
@@ -166,8 +170,11 @@ export default function AdminDashboard({
     }
   }
 
-  async function createShipmentForClaim(claimId: string, submit: boolean) {
-    if (submit && !confirm("¿Crear envío REAL en Tiendanube? Esto va a generar la etiqueta y cobrar el costo del envío al comercio.")) {
+  // Crea una orden de reenvío en Tiendanube vía API (POST /orders). La orden
+  // aparece en Ventas con los productos del pedido original + nota "REENVÍO de #X".
+  // El merchant después entra al admin para generar el envío desde Envío Nube.
+  async function createShipmentForClaim(claimId: string) {
+    if (!confirm("¿Crear orden de reenvío en Tiendanube?\n\nVa a aparecer en Ventas con los productos del pedido original. Después tenés que entrar al admin para generar el envío.")) {
       return;
     }
     setUpdating(true);
@@ -177,20 +184,13 @@ export default function AdminDashboard({
       const res = await fetch("/api/worker/create-shipment-for-claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ claimId, submit }),
+        body: JSON.stringify({ claimId }),
       });
       const data = await res.json();
       if (!res.ok || data.ok === false) {
         setRobotResult(`❌ ${data.error || `HTTP ${res.status}`}`);
-      } else if (data.submitted) {
-        const trackingMsg = data.trackingCode ? ` · Tracking: ${data.trackingCode}` : "";
-        const waMsg = data.whatsappSent
-          ? " · 📱 WhatsApp enviado"
-          : data.whatsappError
-            ? ` · ⚠️ WhatsApp falló: ${data.whatsappError}`
-            : "";
-        setRobotResult(`✅ Envío creado${trackingMsg}${waMsg}`);
-        // Refrescar listado para mostrar el tracking en el modal
+      } else {
+        setRobotResult(`✅ Orden de reenvío creada · #${data.orderNumber}`);
         const refreshRes = await fetch("/api/claims");
         if (refreshRes.ok) {
           const all = await refreshRes.json();
@@ -198,8 +198,9 @@ export default function AdminDashboard({
           const updated = all.find((c: Claim) => c.id === claimId);
           if (updated && selectedClaim?.id === claimId) setSelectedClaim(updated);
         }
-      } else {
-        setRobotResult(`🧪 Dry run del claim OK — ${data.url || "review"}`);
+        // Abrir el admin de Tiendanube en otra pestaña para que el merchant
+        // siga directo con la generación del envío.
+        if (data.adminUrl) window.open(data.adminUrl, "_blank", "noopener");
       }
       setRobotDebug(data);
     } catch (err) {
@@ -960,23 +961,27 @@ export default function AdminDashboard({
                     </button>
                   )}
 
-                  {(selectedClaim.type === "cambio" || selectedClaim.type === "reenvio") && selectedClaim.shippingZipcode && selectedClaim.shippingMode !== "presencial" && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => createShipmentForClaim(selectedClaim.id, false)}
-                        disabled={updating}
-                        className="flex-1 border border-gray-400 text-gray-700 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition disabled:opacity-50"
-                      >
-                        🧪 Test robot (dry run)
-                      </button>
-                      <button
-                        onClick={() => createShipmentForClaim(selectedClaim.id, true)}
-                        disabled={updating}
-                        className="flex-1 bg-purple-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-purple-700 transition disabled:opacity-50"
-                      >
-                        🤖 Crear envío con robot
-                      </button>
-                    </div>
+                  {selectedClaim.type === "reenvio" && selectedClaim.shippingZipcode && selectedClaim.shippingMode !== "presencial" && (
+                    <>
+                      {selectedClaim.reorderOrderId ? (
+                        <a
+                          href={selectedClaim.reorderAdminUrl || "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full bg-emerald-600 text-white py-2.5 rounded-lg font-medium hover:bg-emerald-700 transition flex items-center justify-center gap-2"
+                        >
+                          📦 Ir al pedido #{selectedClaim.reorderOrderNumber} en Tiendanube
+                        </a>
+                      ) : (
+                        <button
+                          onClick={() => createShipmentForClaim(selectedClaim.id)}
+                          disabled={updating}
+                          className="w-full bg-purple-600 text-white py-2.5 rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50"
+                        >
+                          ➕ Crear pedido de reenvío en Tiendanube
+                        </button>
+                      )}
+                    </>
                   )}
                   <div className="flex gap-2">
                     <button
