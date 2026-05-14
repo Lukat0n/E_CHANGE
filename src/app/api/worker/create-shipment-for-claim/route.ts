@@ -125,6 +125,37 @@ export async function POST(req: NextRequest) {
   // 0 porque el cliente pagó via MP, no via la orden de Tiendanube.
   const shippingCostOwner = claim.shippingCost ?? null;
 
+  // Método de envío elegido por el cliente: pasamos el código exacto del storefront
+  // (api_XXX_ne-...) para que Envío Nube reconozca el carrier al crear el envío
+  // desde el admin. Sin esto el pedido queda con "Envío: No informado".
+  const isPickup = claim.shippingMode === "sucursal";
+  // Extraemos el nombre del carrier limpio (sin prefijo "Envío Nube - " y sufijo "Llega...")
+  // para shipping_carrier_name.
+  const carrierName = (claim.shippingMethodName || "")
+    .replace(/^env[ií]o\s*nube\s*-\s*/i, "")
+    .split(/\s*-\s*llega/i)[0]
+    .trim();
+
+  const shippingFields: {
+    shipping?: string;
+    shipping_option?: string;
+    shipping_option_code?: string;
+    shipping_carrier_name?: string;
+    shipping_pickup_type?: "ship" | "pickup";
+    shipping_pickup_details?: Record<string, unknown>;
+  } = {};
+  if (claim.shippingMethodCode) {
+    shippingFields.shipping = "envio_nube";
+    shippingFields.shipping_option_code = claim.shippingMethodCode;
+    if (claim.shippingMethodName) shippingFields.shipping_option = claim.shippingMethodName;
+    if (carrierName) shippingFields.shipping_carrier_name = carrierName;
+    shippingFields.shipping_pickup_type = isPickup ? "pickup" : "ship";
+    // Para sucursal, claim.shippingAddress guarda el nombre de la sucursal elegida.
+    if (isPickup && claim.shippingAddress) {
+      shippingFields.shipping_pickup_details = { name: claim.shippingAddress };
+    }
+  }
+
   const payload = {
     payment_status: "paid",
     products,
@@ -133,6 +164,7 @@ export async function POST(req: NextRequest) {
     billing_address: shippingAddress, // misma dirección para billing
     shipping_cost_customer: 0,
     ...(shippingCostOwner != null ? { shipping_cost_owner: shippingCostOwner } : {}),
+    ...shippingFields,
     note,
   };
 
