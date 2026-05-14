@@ -160,8 +160,11 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // ───── Time gate para shipped: el plazo todavía no terminó ─────
-        if (!skipTimeGate && tdStatus === "shipped") {
+        // ───── Time gate: aplicamos para CUALQUIER status que no sea bloqueo inmediato ─────
+        // Hasta que tengamos PAQ.AR API, no confiamos en statuses tipo "returned"
+        // de Tiendanube (raramente los reporta bien). El único criterio confiable es:
+        // ¿pasó el plazo desde que se despachó? Si sí → admin aprueba. Si no → bloquear.
+        if (!skipTimeGate) {
           if (shippedAtRaw && shippingMaxDays != null && shippingMaxDays > 0) {
             const shippedAt = new Date(shippedAtRaw);
             const buffer = carrierType === "correo" ? 4 : 0;
@@ -186,15 +189,15 @@ export async function POST(req: NextRequest) {
                 { status: 400 }
               );
             }
-            // El plazo pasó → permitir (cae al final del bloque)
+            // El plazo pasó → permitir (cae al final del bloque, admin aprueba)
             console.log(`[claims POST reenvio] plazo de entrega vencido (${carrierType}, ${totalDays}d desde ${shippedAtRaw}), permitiendo`);
           } else {
-            // Sin datos para computar el plazo, permitimos por las dudas
-            console.log("[claims POST reenvio] shipped sin shipped_at/max_days, permitiendo");
+            // Sin shipped_at/max_days no podemos computar. Esto pasa en órdenes
+            // viejas o cuando Envío Nube no reportó la fecha. Dejamos pasar al
+            // admin para que decida.
+            console.log("[claims POST reenvio] sin shipped_at/max_days, permitiendo (admin aprueba)");
           }
         }
-
-        // returned / in_return / lost / unknown → admin aprueba (cae al final)
       }
     } catch (err) {
       console.error("[claims POST] no se pudo verificar status original:", err);
