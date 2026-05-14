@@ -6,13 +6,17 @@ import { sendTemplate, normalizePhoneAR, claimTypeForMessage } from "@/lib/whats
 
 // Webhook de Tiendanube. Eventos de interés para reenvíos:
 //   - order/packed   → la orden se empacó (Envío Nube generó la etiqueta).
-//   - order/fulfilled → la orden se despachó (algunos transportistas no pasan por packed).
+//   - order/fulfilled → la orden se despachó.
+//   - order/updated  → cualquier update (lo usamos como "retry" para cuando
+//                      el tracking aparece DESPUÉS de packed/fulfilled).
 //
 // Body de Tiendanube: { store_id: 12345, event: "order/packed", id: 1970313304 }
 // Headers: x-linkedstore-hmac-sha256 = HMAC-SHA256(body, client_secret) en base64.
 //
 // Cuando llega un evento de despacho, buscamos el claim con reorderOrderId = id,
 // fetcheamos la orden para sacar el tracking, y mandamos WhatsApp.
+// Idempotente: si ya mandamos el WhatsApp con tracking (shipmentTrackingCode
+// existe en el claim), saltamos.
 export async function POST(req: NextRequest) {
   const raw = await req.text();
 
@@ -47,8 +51,8 @@ export async function POST(req: NextRequest) {
   const orderId = body.id;
   if (!orderId) return NextResponse.json({ ok: true });
 
-  // Solo nos importan eventos de despacho/empaque para reenvíos
-  if (event !== "order/packed" && event !== "order/fulfilled") {
+  // Solo nos importan eventos de despacho/empaque + updates (para retry de tracking)
+  if (event !== "order/packed" && event !== "order/fulfilled" && event !== "order/updated") {
     return NextResponse.json({ ok: true });
   }
 

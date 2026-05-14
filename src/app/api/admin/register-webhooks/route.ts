@@ -9,6 +9,8 @@ import { findStore } from "@/lib/store";
 // Eventos suscritos:
 //   - order/packed     → cuando la orden se empacó (Envío Nube generó etiqueta)
 //   - order/fulfilled  → cuando la orden se despachó
+//   - order/updated    → cualquier update; lo usamos como retry para capturar
+//                        el tracking cuando aparece DESPUÉS del packed inicial
 export async function POST(req: NextRequest) {
   const authenticated = await isAuthenticated();
   if (!authenticated) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -18,7 +20,7 @@ export async function POST(req: NextRequest) {
 
   const baseUrl = req.nextUrl.origin;
   const webhookUrl = `${baseUrl}/api/webhooks/tiendanube`;
-  const events = ["order/packed", "order/fulfilled"];
+  const events = ["order/packed", "order/fulfilled", "order/updated"];
 
   const results: Array<{ event: string; ok: boolean; status?: number; body?: unknown }> = [];
 
