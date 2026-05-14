@@ -71,14 +71,21 @@ interface CreateOrderPayload {
   shipping_address?: CreateOrderAddress;
   shipping_cost_customer?: number;
   shipping_cost_owner?: number;
-  // Shipping method choice (qué carrier eligió el cliente)
-  shipping?: string; // ej. "envio_nube"
-  shipping_option?: string; // nombre visible del método
-  shipping_option_code?: string; // código (ej. "api_3603194_ne-e-pick-domicilio")
+  // Shipping method choice (qué carrier eligió el cliente). Formato según
+  // inspección de una orden orgánica (#17704):
+  //   shipping              = "api_3603194"      (carrier app id de Envío Nube en esta store)
+  //   shipping_option_code  = "ne-correo-arg-clasico-domicilio"
+  //   shipping_carrier_name = "Envío Nube"       (siempre, no el carrier puntual)
+  //   shipping_option       = nombre visible
+  shipping?: string;
+  shipping_option?: string;
+  shipping_option_code?: string;
   shipping_option_reference?: string;
-  shipping_carrier_name?: string; // ej. "Correo Argentino"
+  shipping_carrier_name?: string;
   shipping_pickup_type?: "ship" | "pickup";
-  shipping_pickup_details?: Record<string, unknown>; // para sucursal
+  shipping_pickup_details?: Record<string, unknown>;
+  shipping_store_branch_name?: string;
+  shipping_store_branch_extra?: Record<string, unknown>;
   send_confirmation_email?: boolean;
   send_fulfillment_email?: boolean;
   note?: string;

@@ -126,23 +126,31 @@ export async function POST(req: NextRequest) {
   const shippingCostOwner = claim.shippingCost ?? null;
 
   // Método de envío elegido por el cliente: pasamos los campos en el formato exacto
-  // que Tiendanube usa en órdenes orgánicas. Sin esto el pedido queda con "Envío:
-  // No informado" y Envío Nube no auto-confirma.
+  // que Tiendanube usa en órdenes orgánicas (descubierto inspeccionando #17704):
   //
-  // El storefront devuelve el name con sufijo " - Llega entre el lunes... y el martes..."
-  // (decoración para el cliente) y a veces sin tilde en "Envio". Las órdenes orgánicas
-  // guardan solo "Envío Nube - <Carrier> a <domicilio|sucursal>". Lo limpiamos para
-  // que matchee con los carriers configurados de Envío Nube.
+  //   shipping              = "api_3603194"                              (carrier app id)
+  //   shipping_option_code  = "ne-correo-arg-clasico-domicilio"          (sin prefijo api_)
+  //   shipping_carrier_name = "Envío Nube"                                (literal, NO el carrier)
+  //   shipping_option       = "Envío Nube - Correo Argentino Clásico a domicilio"
+  //
+  // El storefront nos devuelve el code combinado ("api_3603194_ne-...") así que
+  // lo splitteamos. Sin estos formatos exactos Envío Nube no matchea con sus
+  // carriers configurados y no auto-confirma.
   const isPickup = claim.shippingMode === "sucursal";
   const rawName = claim.shippingMethodName || "";
-  // 1. Sacar sufijo "- Llega entre..."
-  // 2. Normalizar "Envio" → "Envío" (con tilde)
   const cleanOption = rawName
     .split(/\s*-\s*llega/i)[0]
     .trim()
     .replace(/^envio\s+nube/i, "Envío Nube");
-  // Carrier name: lo que va después de "Envío Nube - "
-  const carrierName = cleanOption.replace(/^env[ií]o\s*nube\s*-\s*/i, "").trim();
+
+  // Split "api_3603194_ne-correo-arg-clasico-domicilio" → ["api_3603194", "ne-..."]
+  let carrierAppId: string | null = null;
+  let optionCode: string | null = null;
+  const codeMatch = (claim.shippingMethodCode || "").match(/^(api_\d+)_(.+)$/);
+  if (codeMatch) {
+    carrierAppId = codeMatch[1];
+    optionCode = codeMatch[2];
+  }
 
   const shippingFields: {
     shipping?: string;
@@ -150,17 +158,20 @@ export async function POST(req: NextRequest) {
     shipping_option_code?: string;
     shipping_carrier_name?: string;
     shipping_pickup_type?: "ship" | "pickup";
-    shipping_pickup_details?: Record<string, unknown>;
+    shipping_store_branch_name?: string;
   } = {};
-  if (claim.shippingMethodCode || cleanOption) {
-    shippingFields.shipping = "envio_nube";
-    if (claim.shippingMethodCode) shippingFields.shipping_option_code = claim.shippingMethodCode;
+  if (carrierAppId || cleanOption) {
+    if (carrierAppId) shippingFields.shipping = carrierAppId;
+    if (optionCode) shippingFields.shipping_option_code = optionCode;
     if (cleanOption) shippingFields.shipping_option = cleanOption;
-    if (carrierName) shippingFields.shipping_carrier_name = carrierName;
+    // En órdenes orgánicas shipping_carrier_name siempre es "Envío Nube" (la app),
+    // NO el nombre del carrier puntual (Correo Argentino / e-pick).
+    shippingFields.shipping_carrier_name = "Envío Nube";
     shippingFields.shipping_pickup_type = isPickup ? "pickup" : "ship";
     // Para sucursal, claim.shippingAddress guarda el nombre de la sucursal elegida.
+    // En órdenes orgánicas sucursal va en shipping_store_branch_name.
     if (isPickup && claim.shippingAddress) {
-      shippingFields.shipping_pickup_details = { name: claim.shippingAddress };
+      shippingFields.shipping_store_branch_name = claim.shippingAddress;
     }
   }
   console.log("[create-reorder] shipping fields enviados:", JSON.stringify(shippingFields));
