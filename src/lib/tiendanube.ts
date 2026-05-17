@@ -143,10 +143,10 @@ export async function createOrder(
 }
 
 /**
- * Actualiza la dirección de envío de una orden existente. Tiendanube acepta
- * PUT /orders/{id} con shipping_address (y opcionalmente billing_address).
- * Solo funciona si el envío no fue despachado todavía — Tiendanube rechaza
- * (422) cuando el shipping_status es shipped/delivered.
+ * Actualiza la dirección de envío de una orden existente. La doc oficial de
+ * Tiendanube indica que las actualizaciones de address van por PATCH /orders/{id}
+ * con los campos planos de address directamente en el body (no anidados en
+ * shipping_address). Si la orden ya fue despachada, Tiendanube responde con error.
  */
 export async function updateOrderAddress(
   accessToken: string,
@@ -155,13 +155,14 @@ export async function updateOrderAddress(
   address: CreateOrderAddress,
   alsoBilling: boolean = true
 ): Promise<{ ok: true; order: Record<string, unknown> } | { ok: false; status: number; error: string }> {
+  // Body con shipping_address + billing_address anidados (formato que acepta PATCH)
   const body: Record<string, unknown> = {
     shipping_address: address,
   };
   if (alsoBilling) body.billing_address = address;
 
   const res = await fetch(`${TIENDANUBE_API}/${storeId}/orders/${orderId}`, {
-    method: "PUT",
+    method: "PATCH",
     headers: headers(accessToken),
     body: JSON.stringify(body),
   });
