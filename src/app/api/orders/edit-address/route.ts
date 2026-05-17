@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { findStore } from "@/lib/store";
-import { getOrderByNumber, formatOrderInfo, updateOrderAddress } from "@/lib/tiendanube";
+import { getOrderByNumber, formatOrderInfo } from "@/lib/tiendanube";
+
+// El worker tiene un timeout largo porque el bot tarda ~15-25s entre login + abrir
+// la orden + editar + guardar.
+export const maxDuration = 90;
 
 // POST /api/orders/edit-address
 // Permite al cliente actualizar la dirección de envío de su pedido SI todavía
@@ -59,73 +63,67 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 4. Construir el address payload para Tiendanube (cubre los campos que su API espera)
+  // 4. Llamar al worker (Playwright bot) para que edite la dirección directamente
+  //    en el admin de Tiendanube. Tiendanube no expone shipping_address como
+  //    editable via API REST, así que la única forma de automatizar es vía la
+  //    UI del admin con el bot.
   const orderId = orderRaw.id as number;
-  const customerName = (orderRaw.contact_name as string) || info.customer.name || "";
-  const [firstName = "", ...rest] = customerName.split(" ").filter(Boolean);
-  const lastName = rest.join(" ").trim();
-
-  const newAddress = {
-    first_name: shipping.nombreCompleto?.split(" ")[0] || firstName || "",
-    last_name: shipping.nombreCompleto?.split(" ").slice(1).join(" ") || lastName || "",
-    address: String(shipping.calle || ""),
-    number: String(shipping.numero || ""),
-    floor: shipping.departamento ? String(shipping.departamento) : null,
-    locality: shipping.barrio ? String(shipping.barrio) : null,
-    city: String(shipping.ciudad || ""),
-    province: String(shipping.provincia || ""),
-    zipcode: String(shipping.codigoPostal || ""),
-    country: "AR",
-    phone: shipping.telefono ? String(shipping.telefono) : ((orderRaw.contact_phone as string) || ""),
-  };
-
-  // 5. Hacer el update en Tiendanube
-  console.log(`[edit-address] PUT /orders/${orderId} con:`, JSON.stringify(newAddress));
-  const result = await updateOrderAddress(store.accessToken, store.storeId, orderId, newAddress);
-  if (!result.ok) {
-    console.error(`[edit-address] updateOrderAddress falló:`, result.error);
+  const workerUrl = process.env.WORKER_URL;
+  const workerKey = process.env.WORKER_API_KEY;
+  if (!workerUrl || !workerKey) {
     return NextResponse.json(
-      { ok: false, error: result.error },
-      { status: result.status || 502 }
+      { ok: false, error: "WORKER_URL/WORKER_API_KEY no configuradas" },
+      { status: 500 }
     );
   }
 
-  // 6. Re-fetch para verificar que Tiendanube efectivamente aplicó el cambio.
-  // Algunas APIs devuelven 200 pero ignoran ciertos campos silently.
-  const verifyRaw = await getOrderByNumber(store.accessToken, store.storeId, orderNumber);
-  const verifyAddr = (verifyRaw?.shipping_address as Record<string, unknown> | undefined) || {};
-  const persisted = {
-    address: verifyAddr.address || null,
-    number: verifyAddr.number || null,
-    city: verifyAddr.city || null,
-    province: verifyAddr.province || null,
-    zipcode: verifyAddr.zipcode || null,
-  };
-  const matches =
-    String(persisted.address || "").trim() === newAddress.address.trim() &&
-    String(persisted.number || "").trim() === newAddress.number.trim() &&
-    String(persisted.zipcode || "").trim() === newAddress.zipcode.trim();
+  try {
+    const botRes = await fetch(`${workerUrl.replace(/\/$/, "")}/api/edit-order-address`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": workerKey },
+      body: JSON.stringify({
+        orderId,
+        address: {
+          calle: shipping.calle || "",
+          numero: shipping.numero || "",
+          departamento: shipping.departamento || "",
+          barrio: shipping.barrio || "",
+          ciudad: shipping.ciudad || "",
+          provincia: shipping.provincia || "",
+          codigoPostal: shipping.codigoPostal || "",
+          telefono: shipping.telefono || (orderRaw.contact_phone as string) || "",
+        },
+      }),
+      signal: AbortSignal.timeout(80000),
+    });
+    const botData = await botRes.json();
+    console.log(
+      `[edit-address] Orden #${orderNumber} (${orderId}) bot result: ok=${botData?.ok} filled=${JSON.stringify(botData?.filled || {})} saved=${JSON.stringify(botData?.saved || {})}`
+    );
 
-  console.log(
-    `[edit-address] Orden #${orderNumber} (${orderId}) put OK. ` +
-    `Address en TN tras verify: ${JSON.stringify(persisted)} | match=${matches}`
-  );
+    if (!botData?.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: botData?.error
+            ? `El bot no pudo editar la dirección: ${botData.error}`
+            : "El bot no pudo editar la dirección. Revisá los logs del worker.",
+          botResult: botData,
+        },
+        { status: 502 }
+      );
+    }
 
-  if (!matches) {
+    return NextResponse.json({
+      ok: true,
+      message: "Dirección actualizada correctamente.",
+      newAddress: shipping,
+    });
+  } catch (err) {
+    console.error("[edit-address] error llamando al bot:", err);
     return NextResponse.json(
-      {
-        ok: false,
-        error: "Tiendanube aceptó el pedido pero la dirección no se aplicó. Puede ser por permisos del token o porque el pedido ya está en un estado que no permite cambios.",
-        attempted: newAddress,
-        persisted,
-      },
+      { ok: false, error: err instanceof Error ? err.message : "Error llamando al bot" },
       { status: 502 }
     );
   }
-
-  return NextResponse.json({
-    ok: true,
-    message: "Dirección actualizada correctamente.",
-    newAddress,
-  });
 }

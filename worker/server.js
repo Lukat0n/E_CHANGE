@@ -1,5 +1,5 @@
 import express from "express";
-import { testLogin, createShipment, inspectUrl, quoteCarriers, checkTrackingStatus } from "./robot.js";
+import { testLogin, createShipment, inspectUrl, quoteCarriers, checkTrackingStatus, editOrderAddress } from "./robot.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -43,6 +43,19 @@ app.post("/api/inspect-url", requireApiKey, async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error("[/api/inspect-url] failed:", err);
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// Editar dirección de envío de una orden directamente en el admin de TN
+// (porque su API marca shipping_address como read-only post-creación).
+// Body: { orderId, address: { calle, numero, ciudad, provincia, codigoPostal, departamento?, barrio?, telefono? } }
+app.post("/api/edit-order-address", requireApiKey, async (req, res) => {
+  try {
+    const result = await editOrderAddress(req.body || {});
+    res.json(result);
+  } catch (err) {
+    console.error("[/api/edit-order-address] failed:", err);
     res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
 });

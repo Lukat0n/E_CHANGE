@@ -143,10 +143,11 @@ export async function createOrder(
 }
 
 /**
- * Actualiza la dirección de envío de una orden existente. La doc oficial de
- * Tiendanube indica que las actualizaciones de address van por PATCH /orders/{id}
- * con los campos planos de address directamente en el body (no anidados en
- * shipping_address). Si la orden ya fue despachada, Tiendanube responde con error.
+ * Intenta actualizar la dirección de envío. Tiendanube tiene una limitación
+ * documentada: el endpoint PUT /orders/{id} acepta el request con 200 OK pero
+ * no aplica cambios al shipping_address (los considera read-only post-creación).
+ * Esta función queda como helper por si alguna vez Tiendanube agrega soporte.
+ * Por ahora siempre va a "fallar" en el verify del caller.
  */
 export async function updateOrderAddress(
   accessToken: string,
@@ -155,14 +156,13 @@ export async function updateOrderAddress(
   address: CreateOrderAddress,
   alsoBilling: boolean = true
 ): Promise<{ ok: true; order: Record<string, unknown> } | { ok: false; status: number; error: string }> {
-  // Body con shipping_address + billing_address anidados (formato que acepta PATCH)
   const body: Record<string, unknown> = {
     shipping_address: address,
   };
   if (alsoBilling) body.billing_address = address;
 
   const res = await fetch(`${TIENDANUBE_API}/${storeId}/orders/${orderId}`, {
-    method: "PATCH",
+    method: "PUT",
     headers: headers(accessToken),
     body: JSON.stringify(body),
   });

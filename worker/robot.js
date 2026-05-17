@@ -272,6 +272,142 @@ export async function testLogin() {
 }
 
 /**
+ * Edita la dirección de envío de una orden directamente desde el admin de
+ * Tiendanube (porque su API marca shipping_address como read-only post-creación).
+ *
+ * Flujo:
+ *   1. Login + navegar a /admin/orders/{orderId}.
+ *   2. Buscar el botón "Editar" al lado de la dirección de envío.
+ *   3. Llenar los campos con los nuevos valores.
+ *   4. Click "Guardar" / "Actualizar".
+ *   5. Verificar que se guardó (espera toast de confirmación o reload).
+ *
+ * Input:
+ *   {
+ *     orderId: 1973085066,
+ *     storeAdminUrl: "https://gelica.mitiendanube.com",  // default si no se pasa
+ *     address: { calle, numero, departamento, barrio, ciudad, provincia, codigoPostal, telefono }
+ *   }
+ */
+export async function editOrderAddress(input) {
+  const { orderId, address } = input || {};
+  if (!orderId) throw new Error("Falta orderId");
+  if (!address || typeof address !== "object") throw new Error("Falta address");
+
+  const storeAdminUrl = input.storeAdminUrl || "https://gelica.mitiendanube.com";
+  const url = `${storeAdminUrl.replace(/\/$/, "")}/admin/orders/${orderId}`;
+
+  const { browser, page } = await launchBrowser();
+  try {
+    await loginToTiendanube(page, url);
+    if (!page.url().startsWith(`${storeAdminUrl.replace(/\/$/, "")}/admin/orders/`)) {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 45000 });
+    }
+    await page.waitForTimeout(6000);
+
+    // Estrategia: buscamos un botón/link "Editar" que esté cerca de "Dirección de envío"
+    // o "Datos del envío". Tiendanube admin tiene secciones con botón Editar a la derecha.
+    const editClicked = await page.evaluate(() => {
+      // Buscar todos los elementos clickables (botones, links)
+      const clickables = Array.from(document.querySelectorAll('button, a[role="button"], a'));
+      // Filtrar por texto "Editar"
+      const editButtons = clickables.filter((el) => {
+        const txt = (el.textContent || "").trim().toLowerCase();
+        return txt === "editar" || txt.startsWith("editar ");
+      });
+      // Encontrar el "Editar" cuyo ancestro contenga "envío" o "envio" o "destinatario"
+      for (const btn of editButtons) {
+        let probe = btn.parentElement;
+        for (let i = 0; i < 8 && probe; i++) {
+          const t = (probe.textContent || "").toLowerCase();
+          if (/env[ií]o|destinatario|direcci[oó]n.*env/i.test(t.slice(0, 500))) {
+            (btn).click();
+            return { found: true, label: btn.textContent?.trim(), context: t.slice(0, 200) };
+          }
+          probe = probe.parentElement;
+        }
+      }
+      // Fallback: clickeamos el primer "Editar" si nada matchea contexto
+      if (editButtons[0]) {
+        editButtons[0].click();
+        return { found: true, fallback: true, label: editButtons[0].textContent?.trim() };
+      }
+      return { found: false, totalEditButtons: editButtons.length };
+    });
+
+    if (!editClicked.found) {
+      const dump = await debugDump(page, `No encontré botón Editar (debugCount=${editClicked.totalEditButtons})`);
+      return { ok: false, error: "no-edit-button", ...dump };
+    }
+
+    // Esperar a que el modal o form de edición aparezca
+    await page.waitForTimeout(3500);
+
+    // Llenar campos por label/placeholder. Probamos varios nombres comunes.
+    const filled = {};
+    const fillTry = async (regexList, value) => {
+      if (!value) return null;
+      for (const re of regexList) {
+        try {
+          const ok = await fillByLabelOrPlaceholder(page, re, String(value));
+          if (ok) return { matched: re.toString(), value };
+        } catch {}
+      }
+      return null;
+    };
+
+    // Provincia: select con label/placeholder "Provincia"
+    if (address.provincia) {
+      try {
+        const r = await selectByVisibleText(page.mainFrame(), address.provincia);
+        filled.provincia = r;
+      } catch (e) {
+        filled.provincia = { error: e?.message };
+      }
+    }
+    filled.ciudad = await fillTry([/^Ciudad/i, /^Localidad/i], address.ciudad);
+    filled.codigoPostal = await fillTry([/C[oó]digo postal/i, /^CP/i, /Postal/i], address.codigoPostal);
+    filled.calle = await fillTry([/^Calle/i, /Direcci[oó]n/i, /^Domicilio/i], address.calle);
+    filled.numero = await fillTry([/^N[uú]mero/i, /^Altura/i], address.numero);
+    filled.departamento = await fillTry([/Departamento|Piso/i, /^Depto/i], address.departamento);
+    filled.barrio = await fillTry([/Barrio/i], address.barrio);
+    filled.telefono = await fillTry([/Tel[eé]fono|Celular/i], address.telefono);
+
+    console.log("[editOrderAddress] campos llenados:", JSON.stringify(filled));
+    await page.waitForTimeout(1500);
+
+    // Buscar y clickear "Guardar" o "Aceptar"
+    const saved = await page.evaluate(() => {
+      const clickables = Array.from(document.querySelectorAll('button, a[role="button"]'));
+      const re = /^(guardar|aceptar|confirmar|actualizar|save)$/i;
+      for (const el of clickables) {
+        const t = (el.textContent || "").trim();
+        if (re.test(t)) {
+          (el).click();
+          return { clicked: t };
+        }
+      }
+      return { clicked: null };
+    });
+
+    console.log("[editOrderAddress] save click:", JSON.stringify(saved));
+
+    if (!saved.clicked) {
+      const dump = await debugDump(page, "No encontré botón Guardar después de llenar");
+      return { ok: false, error: "no-save-button", filled, ...dump };
+    }
+
+    // Esperar a que se procese el save
+    await page.waitForTimeout(5000);
+
+    const dump = await debugDump(page, "edición submit");
+    return { ok: true, filled, saved, ...dump };
+  } finally {
+    await browser.close();
+  }
+}
+
+/**
  * Navega a cualquier URL después de loguear y devuelve HTML snippet + screenshot.
  * Útil para inspeccionar páginas del admin que aún no automatizamos.
  */
