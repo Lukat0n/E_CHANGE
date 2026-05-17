@@ -80,17 +80,48 @@ export async function POST(req: NextRequest) {
   };
 
   // 5. Hacer el update en Tiendanube
+  console.log(`[edit-address] PUT /orders/${orderId} con:`, JSON.stringify(newAddress));
   const result = await updateOrderAddress(store.accessToken, store.storeId, orderId, newAddress);
   if (!result.ok) {
+    console.error(`[edit-address] updateOrderAddress falló:`, result.error);
     return NextResponse.json(
       { ok: false, error: result.error },
       { status: result.status || 502 }
     );
   }
 
+  // 6. Re-fetch para verificar que Tiendanube efectivamente aplicó el cambio.
+  // Algunas APIs devuelven 200 pero ignoran ciertos campos silently.
+  const verifyRaw = await getOrderByNumber(store.accessToken, store.storeId, orderNumber);
+  const verifyAddr = (verifyRaw?.shipping_address as Record<string, unknown> | undefined) || {};
+  const persisted = {
+    address: verifyAddr.address || null,
+    number: verifyAddr.number || null,
+    city: verifyAddr.city || null,
+    province: verifyAddr.province || null,
+    zipcode: verifyAddr.zipcode || null,
+  };
+  const matches =
+    String(persisted.address || "").trim() === newAddress.address.trim() &&
+    String(persisted.number || "").trim() === newAddress.number.trim() &&
+    String(persisted.zipcode || "").trim() === newAddress.zipcode.trim();
+
   console.log(
-    `[edit-address] Orden #${orderNumber} (${orderId}) actualizada por ${customerEmail}: ${newAddress.address} ${newAddress.number}, ${newAddress.city}, ${newAddress.province} CP ${newAddress.zipcode}`
+    `[edit-address] Orden #${orderNumber} (${orderId}) put OK. ` +
+    `Address en TN tras verify: ${JSON.stringify(persisted)} | match=${matches}`
   );
+
+  if (!matches) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Tiendanube aceptó el pedido pero la dirección no se aplicó. Puede ser por permisos del token o porque el pedido ya está en un estado que no permite cambios.",
+        attempted: newAddress,
+        persisted,
+      },
+      { status: 502 }
+    );
+  }
 
   return NextResponse.json({
     ok: true,
