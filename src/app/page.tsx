@@ -770,13 +770,15 @@ export default function HomePage() {
             <div className="space-y-4">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">¿Qué necesitás?</h2>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {([
                   { value: "reclamo" as const, label: "Reclamo", desc: "Producto con problema", icon: "!" },
                   { value: "cambio" as const, label: "Cambio", desc: "Quiero cambiar producto", icon: "↔" },
                   { value: "no_recibido" as const, label: "No recibido", desc: "No me llegó el pedido", icon: "?" },
                   { value: "reenvio" as const, label: "Reenvío", desc: "Reenviar el pedido", icon: "⟳" },
-                  { value: "editar_envio" as const, label: "Editar dirección", desc: "Cambiar la dirección de envío", icon: "✎" },
+                  // { value: "editar_envio" as const, label: "Editar dirección", desc: "Cambiar la dirección de envío", icon: "✎" },
+                  //   ↑ Oculto: Tiendanube no soporta editar shipping_address via API y el bot
+                  //   tiene fricción. Para reactivarlo: descomentar acá + volver al grid-cols-5.
                 ]).map((opt) => (
                   <button
                     key={opt.value}
