@@ -143,6 +143,48 @@ export async function createOrder(
 }
 
 /**
+ * Actualiza la dirección de envío de una orden existente. Tiendanube acepta
+ * PUT /orders/{id} con shipping_address (y opcionalmente billing_address).
+ * Solo funciona si el envío no fue despachado todavía — Tiendanube rechaza
+ * (422) cuando el shipping_status es shipped/delivered.
+ */
+export async function updateOrderAddress(
+  accessToken: string,
+  storeId: string,
+  orderId: number | string,
+  address: CreateOrderAddress,
+  alsoBilling: boolean = true
+): Promise<{ ok: true; order: Record<string, unknown> } | { ok: false; status: number; error: string }> {
+  const body: Record<string, unknown> = {
+    shipping_address: address,
+  };
+  if (alsoBilling) body.billing_address = address;
+
+  const res = await fetch(`${TIENDANUBE_API}/${storeId}/orders/${orderId}`, {
+    method: "PUT",
+    headers: headers(accessToken),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let errText = `HTTP ${res.status}`;
+    try {
+      const j = (await res.json()) as { message?: unknown; description?: unknown };
+      const msg = typeof j.message === "string" ? j.message : typeof j.description === "string" ? j.description : null;
+      errText = msg ? `${errText}: ${msg}` : `${errText}: ${JSON.stringify(j).slice(0, 300)}`;
+    } catch {
+      try {
+        errText += `: ${(await res.text()).slice(0, 300)}`;
+      } catch {}
+    }
+    return { ok: false, status: res.status, error: errText };
+  }
+
+  const order = (await res.json()) as Record<string, unknown>;
+  return { ok: true, order };
+}
+
+/**
  * Construye el URL del admin de Tiendanube para una orden. Útil para linkear al
  * merchant después de crear la orden de reenvío vía API.
  */
