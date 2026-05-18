@@ -65,6 +65,8 @@ export default function AdminDashboard({
   const [typeFilter, setTypeFilter] = useState("todos");
   const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
   const [adminNotes, setAdminNotes] = useState("");
+  const [editingDescription, setEditingDescription] = useState<string | null>(null);
+  const [savingDescription, setSavingDescription] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [editingPhone, setEditingPhone] = useState<{ customer: string; shipping: string } | null>(null);
   const [savingPhone, setSavingPhone] = useState(false);
@@ -113,6 +115,31 @@ export default function AdminDashboard({
       router.refresh();
     }
     setUpdating(false);
+  }
+
+  async function saveDescription(id: string) {
+    if (editingDescription === null) return;
+    setSavingDescription(true);
+    try {
+      const res = await fetch(`/api/claims/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: editingDescription, skipWhatsapp: true }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setClaims(claims.map((c) => (c.id === id ? { ...c, ...updated } : c)));
+        if (selectedClaim?.id === id) setSelectedClaim({ ...selectedClaim, description: updated.description });
+        setEditingDescription(null);
+      } else {
+        const data = await res.json();
+        alert(`Error guardando descripción: ${data.error || res.status}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : "Desconocido"}`);
+    } finally {
+      setSavingDescription(false);
+    }
   }
 
   function copyShippingData(claim: Claim) {
@@ -857,10 +884,47 @@ export default function AdminDashboard({
                 </div>
 
                 <div>
-                  <p className="text-sm font-medium text-gray-700 mb-1">Descripción:</p>
-                  <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3">
-                    {selectedClaim.description || "Sin descripción"}
-                  </p>
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-sm font-medium text-gray-700">Descripción:</p>
+                    {editingDescription === null ? (
+                      <button
+                        onClick={() => setEditingDescription(selectedClaim.description || "")}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        Editar
+                      </button>
+                    ) : (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setEditingDescription(null)}
+                          disabled={savingDescription}
+                          className="text-xs text-gray-500 hover:text-gray-700 font-medium"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => saveDescription(selectedClaim.id)}
+                          disabled={savingDescription}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50"
+                        >
+                          {savingDescription ? "Guardando..." : "Guardar"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  {editingDescription === null ? (
+                    <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 whitespace-pre-wrap">
+                      {selectedClaim.description || "Sin descripción"}
+                    </p>
+                  ) : (
+                    <textarea
+                      value={editingDescription}
+                      onChange={(e) => setEditingDescription(e.target.value)}
+                      rows={4}
+                      className="w-full border border-blue-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
+                      placeholder="Descripción del reclamo..."
+                    />
+                  )}
                 </div>
 
                 {(selectedClaim.type === "cambio" || selectedClaim.type === "reenvio") && (selectedClaim.shippingZipcode || selectedClaim.shippingMode) && (

@@ -18,7 +18,7 @@ export async function PATCH(
   const { id } = await params;
   const body = await req.json();
   const {
-    status, adminNotes, skipWhatsapp,
+    status, adminNotes, skipWhatsapp, description,
     customerPhone, customerName, customerEmail,
     shippingPhone, shippingAddress, shippingNumber, shippingFloor,
     shippingNeighborhood, shippingCity, shippingProvince, shippingZipcode,
@@ -42,6 +42,7 @@ export async function PATCH(
   const data: Record<string, unknown> = {};
   if (status) data.status = status;
   if (adminNotes !== undefined) data.adminNotes = adminNotes;
+  if (description !== undefined) data.description = description || "";
   if (customerPhone !== undefined) data.customerPhone = customerPhone || null;
   if (customerName !== undefined) data.customerName = customerName || null;
   if (customerEmail !== undefined) data.customerEmail = customerEmail || null;
