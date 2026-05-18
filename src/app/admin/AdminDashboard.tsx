@@ -1,7 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+
+interface TrackingAlert {
+  id: string;
+  orderId: number;
+  orderNumber: string;
+  customerName: string | null;
+  trackingCode: string | null;
+  trackingUrl: string | null;
+  status: "returned" | "lost";
+  detectedAt: string | Date;
+  notes: string | null;
+}
 
 interface Claim {
   id: string;
@@ -68,6 +80,35 @@ export default function AdminDashboard({
   const [editingDescription, setEditingDescription] = useState<string | null>(null);
   const [savingDescription, setSavingDescription] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [trackingAlerts, setTrackingAlerts] = useState<TrackingAlert[]>([]);
+  const [showTrackingAlerts, setShowTrackingAlerts] = useState(false);
+  const [ackingAlert, setAckingAlert] = useState<string | null>(null);
+
+  // Carga las alertas de tracking al montar y refrescar
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/tracking-alerts")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => {
+        if (!cancelled) setTrackingAlerts(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function ackAlert(id: string) {
+    setAckingAlert(id);
+    try {
+      const res = await fetch(`/api/admin/tracking-alerts/${id}`, { method: "PATCH" });
+      if (res.ok) {
+        setTrackingAlerts(trackingAlerts.filter((a) => a.id !== id));
+      }
+    } catch {} finally {
+      setAckingAlert(null);
+    }
+  }
   const [editingPhone, setEditingPhone] = useState<{ customer: string; shipping: string } | null>(null);
   const [savingPhone, setSavingPhone] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -492,6 +533,80 @@ export default function AdminDashboard({
       </header>
 
       <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Banner de retornos detectados */}
+        {trackingAlerts.length > 0 && (
+          <div className="mb-6 bg-amber-50 border-2 border-amber-300 rounded-xl overflow-hidden">
+            <button
+              onClick={() => setShowTrackingAlerts(!showTrackingAlerts)}
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-amber-100 transition"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📦</span>
+                <div className="text-left">
+                  <p className="font-semibold text-amber-900">
+                    {trackingAlerts.length} {trackingAlerts.length === 1 ? "paquete con alerta" : "paquetes con alerta"}
+                  </p>
+                  <p className="text-xs text-amber-700">
+                    {trackingAlerts.filter((a) => a.status === "returned").length} retornando / {trackingAlerts.filter((a) => a.status === "lost").length} perdidos
+                  </p>
+                </div>
+              </div>
+              <span className="text-amber-700 text-sm font-medium">
+                {showTrackingAlerts ? "Ocultar ▴" : "Ver ▾"}
+              </span>
+            </button>
+
+            {showTrackingAlerts && (
+              <div className="border-t border-amber-200 divide-y divide-amber-200">
+                {trackingAlerts.map((alert) => (
+                  <div key={alert.id} className="px-4 py-3 flex items-center justify-between gap-4 bg-white">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                            alert.status === "returned"
+                              ? "bg-orange-100 text-orange-800"
+                              : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {alert.status === "returned" ? "Retornando" : "Perdido"}
+                        </span>
+                        <span className="font-medium text-gray-900">#{alert.orderNumber}</span>
+                        <span className="text-sm text-gray-600">· {alert.customerName || "Cliente"}</span>
+                      </div>
+                      {alert.notes && (
+                        <p className="text-xs text-gray-500 mt-0.5">Detección: &ldquo;{alert.notes}&rdquo;</p>
+                      )}
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Detectado: {new Date(alert.detectedAt).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {alert.trackingUrl && (
+                        <a
+                          href={alert.trackingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          Ver tracking
+                        </a>
+                      )}
+                      <button
+                        onClick={() => ackAlert(alert.id)}
+                        disabled={ackingAlert === alert.id}
+                        className="text-xs bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 transition disabled:opacity-50"
+                      >
+                        {ackingAlert === alert.id ? "..." : "Marcar como visto"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-white rounded-xl p-4 shadow-sm border">

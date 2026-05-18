@@ -60,6 +60,38 @@ app.post("/api/edit-order-address", requireApiKey, async (req, res) => {
   }
 });
 
+// Batch scraping de múltiples tracking URLs. Lo usa el cron diario para
+// detectar retornos. Procesa secuencialmente (para no saturar los sitios)
+// y devuelve los resultados al callback.
+// Body: { items: [{ orderId: number, url: string }, ...] }
+app.post("/api/scrape-trackings", requireApiKey, async (req, res) => {
+  try {
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    const results = [];
+    for (const item of items) {
+      if (!item?.url) {
+        results.push({ orderId: item?.orderId, status: "unknown", error: "no url" });
+        continue;
+      }
+      try {
+        const r = await checkTrackingStatus({ url: item.url });
+        results.push({
+          orderId: item.orderId,
+          status: r.status,
+          matched: r.matchedKeyword || null,
+        });
+        console.log(`[scrape-trackings] order ${item.orderId} → ${r.status} (matched: ${r.matchedKeyword || "-"})`);
+      } catch (err) {
+        results.push({ orderId: item.orderId, status: "unknown", error: err?.message || String(err) });
+      }
+    }
+    res.json({ ok: true, results });
+  } catch (err) {
+    console.error("[/api/scrape-trackings] failed:", err);
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
 // Scrape la página de tracking del carrier (Correo/e-pick/etc.) y devuelve
 // un status parseado: returned | delivered | in_transit | lost | unknown.
 // Body: { url: "https://www.correoargentino.com.ar/...." }

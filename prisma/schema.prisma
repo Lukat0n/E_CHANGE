@@ -75,6 +75,28 @@ model AdminUser {
   password String
 }
 
+// Detecciones de retornos / paquetes perdidos. Se crean automáticamente desde
+// el cron diario que scrapea las páginas de tracking de pedidos en curso.
+// El admin las ve en una sección del dashboard y las marca como "vistas" cuando
+// ya manejó el caso (regenera envío, contactó cliente, etc.).
+model TrackingAlert {
+  id            String   @id @default(cuid())
+  storeId       String
+  orderId       Int      // Tiendanube order id
+  orderNumber   String
+  customerName  String?
+  trackingCode  String?
+  trackingUrl   String?
+  status        String   // "returned" | "lost"
+  detectedAt    DateTime @default(now())
+  acknowledged  Boolean  @default(false)
+  acknowledgedAt DateTime?
+  notes         String?  // texto/keyword del evento que disparó la detección
+
+  @@unique([storeId, orderId])
+  @@index([storeId, acknowledged])
+}
+
 // Cache de cotizaciones del bot (Envío Nube admin). Se usa cuando la storefront
 // devuelve $0 por promo de envío gratis y queremos el precio real del merchant.
 // TTL ~24h: pasado ese tiempo se re-cotiza al bot.
