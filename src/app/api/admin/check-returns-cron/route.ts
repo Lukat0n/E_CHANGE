@@ -45,20 +45,21 @@ async function handleCron(req: NextRequest) {
   const store = await findStore("default");
   if (!store) return NextResponse.json({ error: "Store no encontrada" }, { status: 404 });
 
-  // 1. Fetch órdenes shipped de los últimos 60 días.
-  const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
-  const ordersRes = await fetch(
-    `https://api.tiendanube.com/v1/${store.storeId}/orders?per_page=200&shipping_status=shipped&created_at_min=${encodeURIComponent(since)}`,
-    {
-      headers: {
-        Authentication: `bearer ${store.accessToken}`,
-        "User-Agent": "E-Change App (echange@app.com)",
-      },
-    }
-  );
+  // 1. Fetch órdenes shipped. Simplifico la URL al máximo: solo el filtro de
+  //    shipping_status. La ventana temporal la aplicamos en código local.
+  const ordersUrl = `https://api.tiendanube.com/v1/${store.storeId}/orders?shipping_status=shipped&per_page=50`;
+  console.log("[check-returns-cron] fetching:", ordersUrl);
+  const ordersRes = await fetch(ordersUrl, {
+    headers: {
+      Authentication: `bearer ${store.accessToken}`,
+      "User-Agent": "E-Change App (echange@app.com)",
+    },
+  });
   if (!ordersRes.ok) {
+    const body = await ordersRes.text().catch(() => "");
+    console.error(`[check-returns-cron] orders fetch falló: HTTP ${ordersRes.status} body=${body.slice(0, 300)}`);
     return NextResponse.json(
-      { ok: false, error: `Fetch órdenes falló: HTTP ${ordersRes.status}` },
+      { ok: false, error: `Fetch órdenes falló: HTTP ${ordersRes.status}`, body: body.slice(0, 300), url: ordersUrl },
       { status: 502 }
     );
   }
