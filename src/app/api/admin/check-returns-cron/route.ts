@@ -45,25 +45,50 @@ async function handleCron(req: NextRequest) {
   const store = await findStore("default");
   if (!store) return NextResponse.json({ error: "Store no encontrada" }, { status: 404 });
 
-  // 1. Fetch órdenes shipped. Simplifico la URL al máximo: solo el filtro de
-  //    shipping_status. La ventana temporal la aplicamos en código local.
-  const ordersUrl = `https://api.tiendanube.com/v1/${store.storeId}/orders?shipping_status=shipped&per_page=50`;
-  console.log("[check-returns-cron] fetching:", ordersUrl);
-  const ordersRes = await fetch(ordersUrl, {
-    headers: {
-      Authentication: `bearer ${store.accessToken}`,
-      "User-Agent": "E-Change App (echange@app.com)",
-    },
-  });
-  if (!ordersRes.ok) {
-    const body = await ordersRes.text().catch(() => "");
-    console.error(`[check-returns-cron] orders fetch falló: HTTP ${ordersRes.status} body=${body.slice(0, 300)}`);
+  // 1. Fetch órdenes shipped. Probamos primero shipping_status=shipped; si
+  //    devuelve 404 "Last page is 0", probamos con fulfilled. Si las dos
+  //    dan 0, no hay candidatos.
+  //    Importante: trimmamos storeId/accessToken para evitar tabs/espacios.
+  const cleanStoreId = String(store.storeId).trim();
+  const cleanAccessToken = String(store.accessToken).trim();
+
+  async function fetchOrdersByStatus(status: string): Promise<Array<Record<string, unknown>>> {
+    const url = `https://api.tiendanube.com/v1/${cleanStoreId}/orders?shipping_status=${status}&per_page=50`;
+    console.log("[check-returns-cron] fetching:", url);
+    const r = await fetch(url, {
+      headers: {
+        Authentication: `bearer ${cleanAccessToken}`,
+        "User-Agent": "E-Change App (echange@app.com)",
+      },
+    });
+    if (r.ok) {
+      return (await r.json()) as Array<Record<string, unknown>>;
+    }
+    const body = await r.text().catch(() => "");
+    // Tiendanube tira 404 cuando no hay resultados con el mensaje "Last page is 0"
+    if (r.status === 404 && body.toLowerCase().includes("last page is 0")) {
+      console.log(`[check-returns-cron] sin órdenes para shipping_status=${status}`);
+      return [];
+    }
+    console.error(`[check-returns-cron] orders fetch falló: HTTP ${r.status} body=${body.slice(0, 300)}`);
+    throw new Error(`Tiendanube ${r.status}: ${body.slice(0, 200)}`);
+  }
+
+  let orders: Array<Record<string, unknown>> = [];
+  try {
+    // Tiendanube usa "shipped" en algunas órdenes y "fulfilled" en otras
+    // dependiendo del carrier — concatenamos ambos resultados.
+    const [shipped, fulfilled] = await Promise.all([
+      fetchOrdersByStatus("shipped"),
+      fetchOrdersByStatus("fulfilled"),
+    ]);
+    orders = [...shipped, ...fulfilled];
+  } catch (err) {
     return NextResponse.json(
-      { ok: false, error: `Fetch órdenes falló: HTTP ${ordersRes.status}`, body: body.slice(0, 300), url: ordersUrl },
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
       { status: 502 }
     );
   }
-  const orders = (await ordersRes.json()) as Array<Record<string, unknown>>;
 
   // 2. Filtrar candidatos: shipped_at en la ventana de retorno (max_days .. max_days+15).
   const now = Date.now();
