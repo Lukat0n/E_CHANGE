@@ -19,6 +19,22 @@ export const maxDuration = 300; // 5 min máximo (Vercel Pro)
 const MAX_CANDIDATES_PER_RUN = 20;
 
 export async function GET(req: NextRequest) {
+  try {
+    return await handleCron(req);
+  } catch (err) {
+    console.error("[check-returns-cron] uncaught error:", err);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack?.split("\n").slice(0, 5).join("\n") : null,
+      },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleCron(req: NextRequest) {
   // Auth: Vercel cron pasa Authorization: Bearer <CRON_SECRET>
   const auth = req.headers.get("authorization");
   const expected = process.env.CRON_SECRET;
